@@ -1,0 +1,1440 @@
+extends Node3D
+## SG-1 3D : le SGC, la composition d'une adresse, le kawoosh, le voyage dans le trou de ver,
+## la planète en vue tactique et le retour par l'iris avec le code IDC.
+##
+## Ce script enchaîne les scènes et tient l'interface de mission (transmissions, HUD).
+## Le reste vit ailleurs : l'état de la partie dans Game (game_state.gd), le son dans Audio (audio.gd),
+## les réglages dans Settings (settings.gd), les données dans data.gd, et les écrans dans
+## hub.gd (poste du SGC), title_screen.gd, pause_menu.gd et settings_menu.gd.
+
+const GateScript = preload("res://scripts/gate.gd")
+const RoomScript = preload("res://scripts/gateroom.gd")
+const WormholeScript = preload("res://scripts/wormhole.gd")
+const PlanetScript = preload("res://scripts/planet.gd")
+const CombatScript = preload("res://scripts/combat.gd")
+const RealtimeCombat = preload("res://scripts/combat_realtime.gd")
+const HubScript = preload("res://scripts/hub.gd")
+const SGCWalk = preload("res://scripts/sgc_walk.gd")
+const TitleScreen = preload("res://scripts/title_screen.gd")
+const PauseMenu = preload("res://scripts/pause_menu.gd")
+const Data = preload("res://scripts/data.gd")
+const Cli = preload("res://scripts/cli.gd")
+const DebugHarness = preload("res://scripts/debug_harness.gd")
+const T = preload("res://scripts/ui_theme.gd")
+
+const CAM_CONTROL := [Vector3(0, 7.3, 13.9), Vector3(0, 3.7, 0)]
+const CAM_RAMP := [Vector3(0, 2.2, 10.5), Vector3(0, 3.9, 0)]
+const WHITE := Color(0.9, 0.97, 1.0)
+const DARK := Color(0.02, 0.03, 0.05)
+## Couleurs des choix : bleu = avancer, rouge = danger, gris = secondaire (voir _variation)
+const C_GO := Color(0.4, 0.8, 1.0)
+const C_FIGHT := Color(0.95, 0.45, 0.3)
+const C_BACK := Color(0.6, 0.65, 0.75)
+
+# Le monde
+var gate: Node3D
+var room: Node3D
+var wormhole: Node3D
+var cam: Camera3D
+var env: Environment
+var planet: Node3D
+
+# L'interface
+var ui: Control
+var top_bar: PanelContainer
+var title_lbl: Label
+var top_info: Label
+var slots_box: HBoxContainer
+var slots: Array = []
+var bottom: VBoxContainer
+var sub_panel: PanelContainer
+var sub_name: Label
+var sub_text: Label
+var actions_box: VBoxContainer
+var combat_bar: HFlowContainer
+var flash: ColorRect
+var hub: Control
+var sgc: Control
+var pause_menu: Control
+var title_screen: Control
+var hud: Control
+var log_box: VBoxContainer
+var log_lines: Array = []
+var squad := {}
+var _squad_panel: Control
+var _journal_panel: Control
+var _team_toggle: Button
+var _journal_toggle: Button
+
+# Le déroulement
+var busy := false
+var current := -1
+var event_open := false
+var _reward := {}
+
+# Le débogage (voir cli.gd et debug_harness.gd)
+var auto_planet := -1
+var clock := 0.0
+
+
+func _ready() -> void:
+	auto_planet = int(Cli.number("--auto", -1))
+	add_child(DebugHarness.new(self))
+	_build_world()
+	_build_ui()
+	Game.leveled_up.connect(_on_level_up)
+	set_camera(CAM_CONTROL, 0.0)
+	if auto_planet >= 0 or Cli.has("--armory"):
+		show_menu("armory" if Cli.has("--armory") else "briefing")
+	else:
+		show_title()
+	_debug_jumps()
+	if auto_planet >= 0:
+		await get_tree().create_timer(0.5, false).timeout
+		if Data.PLANETS[auto_planet].gate:
+			start_dial(auto_planet)
+		else:
+			start_teltak(auto_planet)
+
+
+## Débogage : atterrir directement sur une planète ou sur un onglet du SGC
+func _debug_jumps() -> void:
+	if Cli.has("--rts"):
+		_start_outpost(true)
+		return
+	if Cli.has("--sgc"):
+		_leave_title()
+	if Cli.value("--planet") != "":
+		_close_title()
+		hub.close()
+		gate.shutdown(0.01)
+		current = int(Cli.value("--planet"))
+		start_planet()
+		if planet and Cli.number("--zoom") > 0:
+			planet.zoom(Cli.number("--zoom"))
+	if (Cli.has("--options") or Cli.value("--options") != "") and title_screen:
+		title_screen.open_options(Cli.value("--options"))
+	if Cli.has("--pause"):
+		get_tree().create_timer(6.0).timeout.connect(open_pause)
+	if Cli.value("--tab") != "":
+		_close_title()
+		gate.shutdown(0.01)
+		show_menu(Cli.value("--tab"))
+
+
+func _process(delta: float) -> void:
+	clock += delta
+	top_bar.visible = title_screen == null and not hub.visible and not sgc.visible and title_lbl.text != ""
+	if title_screen:
+		# Lent travelling devant la porte ouverte
+		var a := sin(clock * 0.12) * 0.55
+		cam.look_at_from_position(Vector3(sin(a) * 10.5, 2.4 + sin(clock * 0.2) * 0.4, cos(a) * 10.5), Vector3(0, 3.9, 0))
+
+
+# ---------- Le monde ----------
+
+func _build_world() -> void:
+	var we := WorldEnvironment.new()
+	we.add_to_group("world_env")
+	env = Environment.new()
+	env.background_mode = Environment.BG_COLOR
+	env.background_color = Color(0.02, 0.02, 0.03)
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0.45, 0.5, 0.6)
+	env.ambient_light_energy = 0.35
+	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	env.glow_intensity = 0.9
+	env.glow_bloom = 0.08
+	env.glow_hdr_threshold = 1.1
+	we.environment = env
+	add_child(we)
+
+	room = RoomScript.new()
+	add_child(room)
+	gate = GateScript.new()
+	gate.position = Vector3(0, RoomScript.GATE_Y, 0)
+	add_child(gate)
+	wormhole = WormholeScript.new()
+	wormhole.position = Vector3(2000, 0, 0)
+	add_child(wormhole)
+
+	cam = Camera3D.new()
+	cam.fov = 62.0
+	add_child(cam)
+	cam.current = true
+
+
+func set_camera(pose: Array, seconds: float) -> Tween:
+	if seconds <= 0.0:
+		cam.look_at_from_position(pose[0], pose[1])
+		return null
+	var from_pos := cam.global_position
+	var from_target: Vector3 = from_pos + (-cam.global_basis.z) * from_pos.distance_to(pose[1])
+	var tw := create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw.tween_method(func(t: float):
+		cam.look_at_from_position(from_pos.lerp(pose[0], t), from_target.lerp(pose[1], t)), 0.0, 1.0, seconds)
+	return tw
+
+
+func shake(seconds: float, amount: float) -> void:
+	if not Settings.value("shake"):
+		return
+	var base := cam.position
+	var tw := create_tween()
+	var steps := int(seconds / 0.04)
+	for i in steps:
+		var k := amount * (1.0 - float(i) / steps)
+		tw.tween_property(cam, "position", base + Vector3(randf_range(-k, k), randf_range(-k, k), 0), 0.04)
+	tw.tween_property(cam, "position", base, 0.05)
+
+
+## Un fondu de l'écran vers une couleur (alpha compris)
+func fade(to: Color, seconds: float) -> Tween:
+	var tw := create_tween()
+	tw.tween_property(flash, "color", to, seconds)
+	return tw
+
+
+func wait(s: float) -> void:
+	await get_tree().create_timer(s, false).timeout
+
+
+# ---------- L'interface ----------
+
+func _build_ui() -> void:
+	var layer := CanvasLayer.new()
+	add_child(layer)
+	ui = Control.new()
+	ui.set_anchors_preset(Control.PRESET_FULL_RECT)
+	ui.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ui.theme = T.make()
+	layer.add_child(ui)
+
+	# La barre d'état du haut pendant les missions : lieu à gauche, état à droite
+	top_bar = PanelContainer.new()
+	top_bar.theme_type_variation = "Bar"
+	top_bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	top_bar.offset_bottom = 56
+	top_bar.visible = false
+	ui.add_child(top_bar)
+	var tr := HBoxContainer.new()
+	tr.add_theme_constant_override("separation", 20)
+	top_bar.add_child(tr)
+	var logo := T.label("SGC", "Body", T.AMBER)
+	logo.add_theme_font_override("font", T.font("PressStart2P"))
+	logo.add_theme_font_size_override("font_size", 18)
+	logo.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	tr.add_child(logo)
+	title_lbl = T.wrap(T.label("", "Caption", T.TEXT))
+	title_lbl.add_theme_font_size_override("font_size", 19)
+	title_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	tr.add_child(title_lbl)
+	top_info = T.wrap(T.label("", "Mono", T.TEXT))
+	top_info.add_theme_font_size_override("font_size", 18)
+	top_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top_info.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	tr.add_child(top_info)
+	var menu := T.button("MENU", open_pause, "Ghost", "Pause · Échap")
+	menu.custom_minimum_size = Vector2(110, 40)
+	tr.add_child(menu)
+
+	# L'adresse en cours de composition, sous la barre
+	slots_box = HBoxContainer.new()
+	slots_box.add_theme_constant_override("separation", 8)
+	slots_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	slots_box.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	slots_box.offset_top = 76
+	slots_box.offset_bottom = 176
+	slots_box.visible = false
+	slots_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ui.add_child(slots_box)
+
+	# En bas au centre : la transmission (qui parle, le texte, les choix) et la barre d'actions du combat
+	bottom = VBoxContainer.new()
+	bottom.add_theme_constant_override("separation", 10)
+	bottom.anchor_left = 0.0
+	bottom.anchor_right = 1.0
+	bottom.anchor_top = 1.0
+	bottom.anchor_bottom = 1.0
+	bottom.offset_left = 340
+	bottom.offset_right = -96
+	bottom.offset_bottom = -20
+	bottom.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ui.add_child(bottom)
+
+	sub_panel = PanelContainer.new()
+	var comm := T.box(Color(DARK, 0.9), Color(T.LINE, 0.9), 12, 1, 16)
+	comm.border_width_left = 4
+	sub_panel.add_theme_stylebox_override("panel", comm)
+	sub_panel.visible = false
+	var sv := VBoxContainer.new()
+	sv.add_theme_constant_override("separation", 6)
+	sub_panel.add_child(sv)
+	sub_name = T.label("", "Section")
+	sub_text = T.wrap(T.label("", "Body", T.TEXT))
+	sub_text.add_theme_font_size_override("font_size", 23)
+	sv.add_child(sub_name)
+	sv.add_child(sub_text)
+	actions_box = VBoxContainer.new()
+	actions_box.add_theme_constant_override("separation", 8)
+	sv.add_child(actions_box)
+	bottom.add_child(sub_panel)
+
+	combat_bar = HFlowContainer.new()
+	combat_bar.add_theme_constant_override("h_separation", 8)
+	combat_bar.add_theme_constant_override("v_separation", 8)
+	combat_bar.alignment = FlowContainer.ALIGNMENT_CENTER
+	combat_bar.visible = false
+	bottom.add_child(combat_bar)
+
+	sgc = SGCWalk.new()
+	sgc.room_requested.connect(_open_sgc_room)
+	sgc.launch_requested.connect(_launch_prepared_mission)
+	sgc.outpost_requested.connect(_start_outpost)
+	sgc.menu_requested.connect(show_title)
+	ui.add_child(sgc)
+	hub = HubScript.new(self)
+	ui.add_child(hub)
+
+	pause_menu = PauseMenu.new()
+	pause_menu.abandon_requested.connect(_abandon)
+	ui.add_child(pause_menu)
+
+	flash = ColorRect.new()
+	flash.color = Color(WHITE, 0.0)
+	flash.set_anchors_preset(Control.PRESET_FULL_RECT)
+	flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ui.add_child(flash)
+	ui.resized.connect(_fit_mission_ui)
+	_fit_mission_ui()
+
+
+func _fit_mission_ui() -> void:
+	# Les portraits et le journal se replient sur les petits écrans logiques.
+	var compact := ui.size.x < 1250
+	bottom.offset_left = 16 if compact else 340
+	bottom.offset_bottom = -20
+	if is_instance_valid(_team_toggle):
+		_team_toggle.visible = compact
+	if is_instance_valid(_journal_toggle):
+		_journal_toggle.visible = compact
+	if is_instance_valid(_journal_panel):
+		_journal_panel.visible = not compact
+		_journal_panel.offset_bottom = minf(332, maxf(172, ui.size.y - 220))
+	if is_instance_valid(_squad_panel):
+		_squad_panel.visible = not compact
+		_squad_panel.anchor_top = 0 if compact else 1
+		_squad_panel.anchor_bottom = 0 if compact else 1
+		_squad_panel.offset_top = 134 if compact else 0
+		_squad_panel.offset_bottom = 134 if compact else -20
+		_squad_panel.grow_vertical = Control.GROW_DIRECTION_END if compact else Control.GROW_DIRECTION_BEGIN
+
+
+## Une transmission : le nom de qui parle et son texte ; en mission, elle s'inscrit au journal
+func say(who: String, text: String) -> void:
+	if Cli.has("--trace"):
+		print("[%.1f] %s : %s" % [Time.get_ticks_msec() / 1000.0, who, text])
+	sub_panel.visible = true
+	sub_name.text = who
+	sub_text.text = text
+	if planet and is_instance_valid(log_box):
+		_log(who, text)
+
+
+func _log(who: String, text: String) -> void:
+	if log_lines.size() > 0 and log_lines[-1] == [who, text]:
+		return
+	log_lines.append([who, text])
+	while log_lines.size() > 6:
+		log_lines.pop_front()
+	_clear_children(log_box)
+	for i in log_lines.size():
+		var l := T.wrap(T.label("", "Body", T.TEXT if i == log_lines.size() - 1 else T.DIM))
+		l.text = "%s · %s" % [log_lines[i][0], log_lines[i][1]]
+		l.add_theme_font_size_override("font_size", 18)
+		log_box.add_child(l)
+
+
+func _clear_children(n: Node) -> void:
+	for c in n.get_children():
+		n.remove_child(c)
+		c.queue_free()
+
+
+func clear_actions() -> void:
+	_clear_children(actions_box)
+	_clear_children(combat_bar)
+	combat_bar.visible = false
+
+
+## Le style d'un bouton selon sa couleur d'origine : rouge = danger, ambre = action, gris = secondaire
+func _variation(c: Color) -> String:
+	if c.s < 0.25:
+		return "Ghost"
+	if c.h < 0.05 or c.h > 0.93:
+		return "Danger"
+	if c.h < 0.17:
+		return "Accent"
+	return ""
+
+
+## Un choix dans la transmission, numéroté pour le clavier
+func add_action(text: String, color: Color, cb: Callable) -> void:
+	sub_panel.visible = true
+	var n := actions_box.get_child_count() + 1
+	var b := T.button("%d   %s" % [n, text.to_upper()], func():
+		Audio.play("press")
+		cb.call(), _variation(color), "Touche %d" % n)
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.custom_minimum_size = Vector2(0, 52)
+	actions_box.add_child(b)
+
+
+func set_slots(adr: Array) -> void:
+	_clear_children(slots_box)
+	slots.clear()
+	for i in adr.size():
+		var p := PanelContainer.new()
+		var sb := T.box(Color(DARK, 0.88), Color(T.LINE, 0.7), 8, 1, 6)
+		p.add_theme_stylebox_override("panel", sb)
+		var v := VBoxContainer.new()
+		v.add_theme_constant_override("separation", 2)
+		p.add_child(v)
+		var tr := TextureRect.new()
+		tr.texture = T.glyph(adr[i]) if adr[i] > 0 else null
+		tr.custom_minimum_size = Vector2(70, 70)
+		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tr.modulate = Color(0.45, 0.5, 0.56)
+		v.add_child(tr)
+		var num := T.label("CHEVRON %d" % (i + 1), "Caption")
+		num.add_theme_font_size_override("font_size", 12)
+		num.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		v.add_child(num)
+		slots_box.add_child(p)
+		slots.append({"panel": p, "glyph": tr, "sb": sb, "num": num})
+	slots_box.visible = true
+
+
+func lock_slot(i: int) -> void:
+	var s: Dictionary = slots[i]
+	s.glyph.modulate = T.AMBER
+	s.sb.border_color = T.AMBER
+	s.sb.bg_color = Color(0.3, 0.16, 0.04, 0.9)
+	s.num.add_theme_color_override("font_color", T.AMBER)
+
+
+# ---------- La bannière des grands moments ----------
+
+func banner(title: String, sub: String = "", color: Color = T.AMBER) -> void:
+	var b := VBoxContainer.new()
+	b.set_anchors_preset(Control.PRESET_CENTER)
+	b.anchor_top = 0.3
+	b.anchor_bottom = 0.3
+	b.offset_left = -500
+	b.offset_right = 500
+	b.grow_vertical = Control.GROW_DIRECTION_BOTH
+	b.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_theme_constant_override("separation", 6)
+	ui.add_child(b)
+	ui.move_child(b, pause_menu.get_index())
+	var line := ColorRect.new()
+	line.color = Color(color, 0.8)
+	line.custom_minimum_size = Vector2(0, 2)
+	b.add_child(line)
+	var t := T.label(title, "Heading", color)
+	t.add_theme_font_size_override("font_size", 64)
+	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	t.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
+	t.add_theme_constant_override("shadow_offset_y", 3)
+	b.add_child(t)
+	if sub != "":
+		var c := T.label(sub, "Caption", T.TEXT)
+		c.add_theme_font_size_override("font_size", 20)
+		c.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		c.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
+		c.add_theme_constant_override("shadow_offset_y", 2)
+		b.add_child(c)
+	b.add_child(line.duplicate())
+	b.modulate.a = 0.0
+	var tw := b.create_tween()
+	tw.tween_property(b, "modulate:a", 1.0, 0.35)
+	tw.tween_interval(2.2)
+	tw.tween_property(b, "modulate:a", 0.0, 0.6)
+	tw.tween_callback(b.queue_free)
+
+
+# ---------- Le SGC ----------
+
+func show_menu(t: String = "") -> void:
+	busy = false
+	clear_actions()
+	slots_box.visible = false
+	sub_panel.visible = false
+	title_lbl.text = ""
+	# La coupe est opaque : ne pas rendre le SGC 3D inutilement derrière elle.
+	room.visible = false
+	gate.visible = false
+	wormhole.visible = false
+	if t == "":
+		hub.close()
+		sgc.open()
+	else:
+		sgc.close()
+		hub.open(t)
+	set_camera(CAM_CONTROL, 1.2)
+
+
+func return_to_sgc() -> void:
+	if planet or busy:
+		return
+	show_menu()
+
+
+func _open_sgc_room(room_id: String) -> void:
+	if room_id in ["briefing", "armory", "team", "infirmary"]:
+		show_menu(room_id)
+
+
+func prepare_mission(index: int) -> bool:
+	if busy or planet or index < 0 or index >= Data.PLANETS.size() or not Game.unlocked(index):
+		return false
+	sgc.prepared_mission = index
+	show_menu()
+	sgc.navigate("gate", false)
+	return true
+
+
+func _launch_prepared_mission(index: int) -> void:
+	if index < 0 or index >= Data.PLANETS.size() or not Game.unlocked(index):
+		return
+	if Data.PLANETS[index].gate:
+		start_dial(index)
+	else:
+		start_teltak(index)
+
+
+## Quitter le SGC pour une mission : on ferme le poste et les choix en cours
+func _depart(i: int) -> bool:
+	if busy or i < 0 or i >= Data.PLANETS.size() or not Game.unlocked(i):
+		return false
+	busy = true
+	current = i
+	hub.close()
+	sgc.close()
+	room.visible = true
+	gate.visible = true
+	wormhole.visible = true
+	clear_actions()
+	return true
+
+
+# ---------- La composition ----------
+
+func start_dial(i: int) -> void:
+	if not _depart(i):
+		return
+	var adr: Array = Data.PLANETS[i].adr + [1]
+	title_lbl.text = "SALLE DE CONTRÔLE · %s" % Data.PLANETS[i].n.to_upper()
+	set_slots(adr)
+	gate.reset_chevrons()
+	room.set_beacons(true)
+	say("SERGENT HARRIMAN", "Lancement de la séquence de composition.")
+	await wait(1.4)
+	for n in 7:
+		say("SERGENT HARRIMAN", "Encodage du chevron %d…" % (n + 1))
+		Audio.loop_play("dial", -3.0)
+		await gate.spin_to(adr[n], 1 if n % 2 == 0 else -1).finished
+		Audio.loop_stop("dial", 0.12)
+		Audio.play("lock")
+		await gate.engage_master().finished
+		gate.light_chevron(n)
+		lock_slot(n)
+		say("SERGENT HARRIMAN", "Chevron %d enclenché." % (n + 1) if n < 6 else "Chevron sept verrouillé !")
+		await wait(0.5)
+	Audio.play("kawoosh")
+	shake(1.0, 0.06)
+	await gate.kawoosh(1.8).finished
+	Audio.loop_play("horizon", -9.0)
+	room.set_beacons(false)
+	say("SERGENT HARRIMAN", "Vortex stable. L'iris est ouvert, mon général.")
+	clear_actions()
+	add_action("Passer la porte", C_GO, pass_gate)
+	add_action("Couper le vortex", Color(0.9, 0.4, 0.3), abort_gate)
+	if auto_planet >= 0:
+		await wait(1.5)
+		pass_gate()
+
+
+func abort_gate() -> void:
+	clear_actions()
+	Audio.loop_stop("horizon")
+	Audio.play("close")
+	await gate.shutdown().finished
+	show_menu()
+
+
+# ---------- Le passage ----------
+
+func pass_gate() -> void:
+	clear_actions()
+	slots_box.visible = false
+	sub_panel.visible = false
+	title_lbl.text = ""
+	await set_camera(CAM_RAMP, 2.0).finished
+	gate.set_ripple(1.0)
+	Audio.play("travel")
+	await set_camera([Vector3(0, RoomScript.GATE_Y, 0.4), Vector3(0, RoomScript.GATE_Y, -5)], 1.4).finished
+	await fade(WHITE, 0.25).finished
+	Audio.loop_stop("horizon", 0.2)
+	gate.set_ripple(0.0)
+	await fly_wormhole()
+	gate.shutdown(0.01)
+	start_planet()
+
+
+## Traverse le trou de ver ; l'écran est blanc au début et à la fin.
+func fly_wormhole() -> void:
+	cam.current = true
+	var a: Vector3 = wormhole.global_position + Vector3(0, 0, 150)
+	cam.look_at_from_position(a, a + Vector3(0, 0, -10))
+	fade(Color(WHITE, 0.0), 0.35)
+	var fly := create_tween()
+	fly.tween_method(func(t: float):
+		var p := a + Vector3(sin(t * 9.0) * 0.8, cos(t * 7.0) * 0.6, -300.0 * t)
+		cam.look_at_from_position(p, p + Vector3(0, 0, -10), Vector3(sin(t * 4.0) * 0.3, 1, 0)), 0.0, 1.0, 3.2)
+	await fly.finished
+	await fade(WHITE, 0.2).finished
+
+
+func start_teltak(i: int) -> void:
+	if not _depart(i):
+		return
+	say("GÉNÉRAL HAMMOND", "Le Tel'tak de Martouf vous attend. Bonne chance sur Netu.")
+	await wait(1.6)
+	await fade(WHITE, 0.5).finished
+	start_planet()
+
+
+# ---------- Le retour : activation extérieure, iris et code IDC ----------
+
+func return_home() -> void:
+	clear_actions()
+	cam.current = true
+	gate.reset_chevrons()
+	gate.set_iris(false, 0.01)
+	set_camera(CAM_CONTROL, 0.0)
+	title_lbl.text = "SALLE DE CONTRÔLE · NIVEAU 28"
+	fade(Color(DARK, 0.0), 0.6)
+	set_slots(Data.EARTH + [0])
+	room.set_beacons(true)
+	Audio.play("alarm")
+	say("SERGENT HARRIMAN", "Activation extérieure non programmée !")
+	await wait(1.2)
+	say("GÉNÉRAL HAMMOND", "Fermez l'iris !")
+	Audio.play("iris_close")
+	gate.set_iris(true, 1.4)
+	for n in 7:
+		Audio.play("lock_in")
+		gate.light_chevron(n)
+		lock_slot(n)
+		await wait(0.7)
+	Audio.play("kawoosh")
+	shake(0.8, 0.05)
+	await gate.kawoosh(1.6, true).finished
+	Audio.loop_play("horizon", -14.0)
+	say("SERGENT HARRIMAN", "Nous recevons un code IDC… c'est SG-1, mon général !")
+	await wait(1.6)
+	say("GÉNÉRAL HAMMOND", "Ouvrez l'iris.")
+	Audio.play("iris")
+	await gate.set_iris(false, 1.0).finished
+	room.set_beacons(false)
+	await set_camera(CAM_RAMP, 1.6).finished
+	gate.set_ripple(1.0)
+	await wait(1.0)
+	gate.set_ripple(0.0)
+	say("GÉNÉRAL HAMMOND", "Bon retour parmi nous, SG-1. Le Dr Fraiser vous attend à l'infirmerie.")
+	Game.heal_all()
+	Game.save_game()
+	Audio.loop_stop("horizon")
+	Audio.play("close")
+	await gate.shutdown().finished
+	await wait(1.2)
+	show_menu()
+
+
+# ---------- L'écran titre ----------
+
+func show_title() -> void:
+	busy = true
+	room.visible = true
+	gate.visible = true
+	wormhole.visible = false
+	hub.close()
+	sgc.close()
+	clear_actions()
+	slots_box.visible = false
+	sub_panel.visible = false
+	title_lbl.text = ""
+	# La porte est ouverte, tous chevrons allumés, l'horizon ondule
+	for n in 7:
+		gate.light_chevron(n)
+	gate.set_horizon(1.0, 1.0)
+	gate.set_ripple(0.25)
+	Audio.loop_play("horizon", -16.0)
+	Audio.loop_play("theme", -7.0)
+	_close_title()
+	title_screen = TitleScreen.new()
+	title_screen.continue_requested.connect(_leave_title)
+	title_screen.outpost_requested.connect(_start_outpost)
+	title_screen.assets_requested.connect(_start_asset_gallery)
+	title_screen.new_game_requested.connect(func():
+		Game.new_game()
+		sgc.reset_visit()
+		_leave_title())
+	ui.add_child(title_screen)
+	ui.move_child(title_screen, 1)
+
+
+func _start_asset_gallery() -> void:
+	Audio.loop_stop("theme", 0.2)
+	Audio.loop_stop("horizon", 0.2)
+	get_tree().change_scene_to_file.call_deferred("res://dev/outpost_gallery.tscn")
+
+
+func _start_outpost(direct: bool = false) -> void:
+	Audio.loop_stop("theme", 0.2)
+	Audio.loop_stop("horizon", 0.2)
+	get_tree().change_scene_to_file.call_deferred("res://outpost.tscn" if direct else "res://outpost_menu.tscn")
+
+
+func _close_title() -> void:
+	if title_screen:
+		title_screen.queue_free()
+		title_screen = null
+
+
+func _leave_title() -> void:
+	_close_title()
+	Audio.loop_stop("theme", 1.5)
+	Audio.loop_stop("horizon", 0.6)
+	Audio.play("close")
+	gate.set_ripple(0.0)
+	gate.shutdown(0.8)
+	show_menu()
+
+
+# ---------- Le clavier en mission ----------
+
+## 1 à 9 choisissent un bouton (choix ou action de combat), Échap met en pause, C recentre, H soigne
+func _input(e: InputEvent) -> void:
+	# Espace doit rester une pause tactique même si un bouton d'action a le focus.
+	if planet and planet.combat and planet.combat.has_method("toggle_tactical_pause") and not pause_menu.visible:
+		if e is InputEventKey and e.pressed and not e.echo and e.keycode == KEY_SPACE:
+			planet.combat.toggle_tactical_pause()
+			get_viewport().set_input_as_handled()
+
+
+func _unhandled_input(e: InputEvent) -> void:
+	if title_screen or hub.visible or sgc.visible or not (e is InputEventKey) or not e.pressed or e.echo:
+		return
+	var n: int = e.keycode - KEY_1 if e.keycode >= KEY_1 and e.keycode <= KEY_9 else (e.keycode - KEY_KP_1 if e.keycode >= KEY_KP_1 and e.keycode <= KEY_KP_9 else -1)
+	if n >= 0:
+		var row: Node = combat_bar if combat_bar.visible else actions_box
+		if n < row.get_child_count():
+			var b := row.get_child(n) as Button
+			if b and not b.disabled:
+				b.pressed.emit()
+				get_viewport().set_input_as_handled()
+		return
+	if e.keycode == KEY_ESCAPE:
+		open_pause()
+	elif planet and e.keycode == KEY_C:
+		planet.recenter()
+	elif planet and e.keycode == KEY_H:
+		use_kit_map()
+	else:
+		return
+	get_viewport().set_input_as_handled()
+
+
+# ---------- La pause ----------
+
+func open_pause() -> void:
+	if title_screen or hub.visible or title_lbl.text == "":
+		return
+	pause_menu.open(title_lbl.text, planet != null, _can_abandon())
+
+
+## On ne quitte une planète que hors des séquences animées (arrivée, départ, tour ennemi…)
+func _can_abandon() -> bool:
+	if not planet or planet.input_locked:
+		return false
+	var c = planet.combat
+	return c == null or (c.turn == "player" and not c.busy)
+
+
+## Quitter la planète en cours : retour au SGC (ou à l'écran titre) sans finir la mission
+func _abandon(to_title: bool) -> void:
+	if not _can_abandon():
+		return
+	busy = true
+	clear_actions()
+	sub_panel.visible = false
+	Audio.play("close")
+	await fade(Color(DARK, 1.0), 0.4).finished
+	_end_planet()
+	Game.save_game()
+	set_camera(CAM_CONTROL, 0.0)
+	title_lbl.text = ""
+	fade(Color(DARK, 0.0), 0.5)
+	if to_title:
+		show_title()
+	else:
+		hub.notice("Mission interrompue. SG-1 est rentrée au SGC ; %s reste à libérer." % Data.PLANETS[current].n)
+		show_menu()
+
+
+# ---------- La planète ----------
+
+func start_planet() -> void:
+	sgc.close()
+	room.visible = false
+	gate.visible = false
+	slots_box.visible = false
+	title_lbl.text = ""
+	planet = PlanetScript.new()
+	add_child(planet)
+	planet.setup(current, Game.team, randi())
+	for k in Game.team:
+		if Game.stats.hp[k] <= 0:
+			Game.stats.hp[k] = 1
+	var d: Dictionary = Data.PLANETS[current]
+	var sun := DirectionalLight3D.new()
+	sun.add_to_group("sun")
+	sun.light_color = d.sun
+	# Assez de lumière même sur les mondes sombres (Netu, Hala)
+	sun.light_energy = max(1.1, d.sun_e * 0.9)
+	sun.rotation_degrees = Vector3(-48, 150, 0)
+	sun.shadow_blur = 1.5
+	sun.directional_shadow_max_distance = 55.0
+	planet.add_child(sun)
+	planet.cam.current = true
+	planet.poi_reached.connect(_on_poi)
+	planet.gate_near.connect(_on_gate_near)
+	_planet_env(d)
+	_build_hud()
+	fade(Color(WHITE, 0.0), 0.6)
+	Audio.play("kawoosh" if d.gate else "rings")
+	say("COLONEL O'NEILL", "Allez, on y va, les enfants.")
+	banner(d.n.to_upper(), "MISSION %02d  ·  %s" % [current + 1, "PAR LA PORTE DES ÉTOILES" if d.gate else "PAR LES ANNEAUX DE TRANSPORT"])
+	await planet.arrive()
+	say("COLONEL O'NEILL", "Touchez le terrain pour déplacer l'équipe. Glissez pour la caméra, pincez ou molette pour zoomer ; au clavier, ZQSD, A/E et +/−.")
+	if auto_planet >= 0:
+		_auto_explore()
+
+
+func _planet_env(d: Dictionary) -> void:
+	var sky := Sky.new()
+	var sm := ProceduralSkyMaterial.new()
+	sm.sky_top_color = d.sky_top
+	sm.sky_horizon_color = d.sky_hz
+	sm.sky_curve = 0.12
+	sm.ground_horizon_color = d.sky_hz
+	sm.ground_bottom_color = d.far
+	sm.sun_angle_max = 30.0
+	sm.sun_curve = 0.1
+	sky.sky_material = sm
+	env.background_mode = Environment.BG_SKY
+	env.sky = sky
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	env.ambient_light_energy = 0.75
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
+	if d.sky_top.get_luminance() < 0.15:
+		# Ciel noir : une lumière d'ambiance colorée, sinon tout serait noir
+		env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+		env.ambient_light_color = d.fog.lerp(Color(0.6, 0.62, 0.7), 0.5)
+		env.ambient_light_energy = 1.3
+	env.tonemap_mode = Environment.TONE_MAPPER_ACES
+	env.tonemap_exposure = 0.92
+	# Brouillard de profondeur : l'horizon se fond dans le ciel, l'aire de jeu reste nette
+	env.fog_enabled = true
+	env.fog_mode = Environment.FOG_MODE_DEPTH
+	env.fog_light_color = d.sky_hz.lerp(d.fog, 0.5)
+	env.fog_depth_begin = 38.0
+	env.fog_depth_end = 120.0
+	env.fog_depth_curve = 1.2
+	env.fog_sky_affect = 0.0
+	env.adjustment_enabled = true
+	env.adjustment_saturation = 1.0
+	env.adjustment_contrast = 1.05
+
+
+func _sgc_env() -> void:
+	env.background_mode = Environment.BG_COLOR
+	env.background_color = Color(0.02, 0.02, 0.03)
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_energy = 0.35
+	env.fog_enabled = false
+	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	env.tonemap_exposure = 1.0
+	env.adjustment_enabled = false
+
+
+# ---------- Le HUD de mission ----------
+
+func _build_hud() -> void:
+	if hud:
+		hud.queue_free()
+	hud = Control.new()
+	hud.set_anchors_preset(Control.PRESET_FULL_RECT)
+	hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ui.add_child(hud)
+	ui.move_child(hud, 0)
+	log_lines.clear()
+
+	# En bas à gauche : SG-1, un portrait et une barre de vie par membre ; en combat, un clic choisit le membre
+	var sq := VBoxContainer.new()
+	_squad_panel = sq
+	sq.add_theme_constant_override("separation", 6)
+	sq.anchor_top = 1.0
+	sq.anchor_bottom = 1.0
+	sq.offset_left = 16
+	sq.offset_right = 316
+	sq.offset_bottom = -20
+	sq.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	sq.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud.add_child(sq)
+	_team_toggle = T.button("ÉQUIPE ▸", func(): _squad_panel.visible = not _squad_panel.visible, "Ghost")
+	_team_toggle.position = Vector2(16, 72)
+	hud.add_child(_team_toggle)
+	squad.clear()
+	for k in Game.team:
+		var m: Dictionary = Data.MEMBERS[k]
+		var card := PanelContainer.new()
+		var sb := T.box(Color(0.03, 0.045, 0.07, 0.88), Color(T.LINE, 0.6), 8, 1, 7)
+		card.add_theme_stylebox_override("panel", sb)
+		card.tooltip_text = "%s · %s" % [m.n, m.ability]
+		var key: String = k
+		card.gui_input.connect(func(e: InputEvent):
+			if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
+				_squad_pick(key))
+		var h := HBoxContainer.new()
+		h.add_theme_constant_override("separation", 10)
+		h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.add_child(h)
+		var face := HubScript.portrait(k, Vector2(60, 60), true)
+		face.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		h.add_child(face)
+		var v := VBoxContainer.new()
+		v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		v.alignment = BoxContainer.ALIGNMENT_CENTER
+		v.add_theme_constant_override("separation", 3)
+		h.add_child(v)
+		var row := HBoxContainer.new()
+		v.add_child(row)
+		var nm := T.label(String(m.n).to_upper(), "Body", T.TEXT)
+		nm.add_theme_font_override("font", T.font("Rajdhani-Bold"))
+		nm.add_theme_font_size_override("font_size", 20)
+		nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(nm)
+		var hp := T.label("", "Mono", T.DIM)
+		hp.add_theme_font_size_override("font_size", 16)
+		row.add_child(hp)
+		var g := T.gauge(1, 1, T.GREEN, 6)
+		v.add_child(g)
+		var ab := T.label(String(m.ability).to_upper(), "Caption")
+		ab.add_theme_font_size_override("font_size", 12)
+		v.add_child(ab)
+		sq.add_child(card)
+		squad[k] = {"card": card, "sb": sb, "gauge": g, "hp": hp, "ab": ab}
+
+	# En haut à droite : le journal de mission
+	var lp := PanelContainer.new()
+	_journal_panel = lp
+	lp.add_theme_stylebox_override("panel", T.box(Color(DARK, 0.78), Color(T.LINE, 0.5), 10, 1, 12))
+	lp.anchor_left = 1.0
+	lp.anchor_right = 1.0
+	lp.offset_left = -450
+	lp.offset_right = -96
+	lp.offset_top = 72
+	lp.offset_bottom = 332
+	lp.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud.add_child(lp)
+	_journal_toggle = T.button("JOURNAL ▸", func(): _journal_panel.visible = not _journal_panel.visible, "Ghost")
+	_journal_toggle.position = Vector2(180, 72)
+	hud.add_child(_journal_toggle)
+	var lv := VBoxContainer.new()
+	lv.add_theme_constant_override("separation", 6)
+	lp.add_child(lv)
+	lv.add_child(T.label("JOURNAL DE MISSION", "Section"))
+	var log_scroll := ScrollContainer.new()
+	log_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	log_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	lv.add_child(log_scroll)
+	log_box = VBoxContainer.new()
+	log_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	log_box.add_theme_constant_override("separation", 4)
+	log_scroll.add_child(log_box)
+
+	# À droite, en bas : la caméra et la trousse
+	var cbox := VBoxContainer.new()
+	cbox.add_theme_constant_override("separation", 8)
+	cbox.anchor_left = 1.0
+	cbox.anchor_right = 1.0
+	cbox.anchor_top = 1.0
+	cbox.anchor_bottom = 1.0
+	cbox.offset_left = -76
+	cbox.offset_right = -16
+	cbox.offset_bottom = -20
+	cbox.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	hud.add_child(cbox)
+	for b in [["+", "Zoomer · molette ou +", func(): planet.zoom(0.8)], ["−", "Dézoomer · molette ou −", func(): planet.zoom(1.25)],
+			["⟲", "Tourner à gauche · A (clic droit glissé)", func(): planet.turn(-45)], ["⟳", "Tourner à droite · E", func(): planet.turn(45)],
+			["◎", "Recentrer sur l'équipe · C", func(): planet.recenter()], ["✚", "Trousse de soins sur le plus blessé · H", use_kit_map]]:
+		var btn := T.button(b[0], b[2], "", b[1])
+		btn.custom_minimum_size = Vector2(60, 56)
+		btn.add_theme_stylebox_override("normal", T.box(Color(0.03, 0.045, 0.07, 0.88), Color(T.LINE, 0.8), 8, 1, 6))
+		btn.add_theme_font_override("font", ThemeDB.fallback_font)
+		btn.add_theme_font_size_override("font_size", 28)
+		cbox.add_child(btn)
+	_update_hud()
+	_fit_mission_ui()
+
+
+func _update_hud() -> void:
+	if squad.is_empty() or not planet:
+		return
+	var s: Dictionary = Game.stats
+	var act := ""
+	var c = planet.combat
+	if c and c.turn == "player" and c.active >= 0:
+		act = c.units[c.active].kind
+	for k in Game.team:
+		var q: Dictionary = squad[k]
+		var hp := int(s.hp[k])
+		var mx: int = Game.hp_max(k)
+		if c:
+			for u in c.units:
+				if u.side == "sg1" and u.kind == k:
+					hp = u.hp
+		q.gauge.max_value = mx
+		q.gauge.value = hp
+		(q.gauge.get_theme_stylebox("fill") as StyleBoxFlat).bg_color = T.hp_color(float(hp) / mx)
+		q.hp.text = "%d/%d" % [hp, mx]
+		q.card.modulate = Color(1, 1, 1, 0.45) if hp <= 0 else Color(1, 1, 1)
+		q.sb.border_color = T.BLUE if k == act else Color(T.LINE, 0.6)
+		q.sb.border_width_left = 4 if k == act else 1
+		q.sb.bg_color = Color(0.05, 0.1, 0.16, 0.92) if k == act else Color(0.03, 0.045, 0.07, 0.88)
+	var left := 0
+	for p in planet.pois:
+		if not p.done and p.k != "piege":
+			left += 1
+	var where: String = Data.PLANETS[current].n.to_upper()
+	if c:
+		if c.has_method("toggle_tactical_pause"):
+			title_lbl.text = "%s  //  %s" % [where, "PAUSE TACTIQUE" if c.tactical_paused else "COMBAT EN TEMPS RÉEL"]
+		else:
+			title_lbl.text = "%s  //  COMBAT  ·  TOUR %s" % [where, "SG-1" if c.turn == "player" else "ENNEMI"]
+	else:
+		title_lbl.text = "%s  //  %s" % [where, ("%d LIEU%s À EXPLORER" % [left, "X" if left > 1 else ""]) if left > 0 else "ZONE EXPLORÉE · RETOUR À LA PORTE"]
+	top_info.text = "NIV %d    XP %d/%d    NAQUADAH %d    TROUSSES %d" % [s.lvl, s.xp, Game.xp_to_next(), s.naq, s.kits]
+
+
+## Un clic sur un membre : en combat, il devient le membre actif ; sinon, la caméra va sur lui
+func _squad_pick(k: String) -> void:
+	if not planet:
+		return
+	var c = planet.combat
+	if c:
+		if c.turn != "player" or c.busy:
+			return
+		for i in c.units.size():
+			var u: Dictionary = c.units[i]
+			if u.side == "sg1" and u.kind == k and u.alive and u.ap > 0:
+				Audio.play("press")
+				c.select(i)
+				if is_instance_valid(_team_toggle) and _team_toggle.visible:
+					_squad_panel.hide()
+				return
+	else:
+		var i := Game.team.find(k)
+		if i >= 0 and i < planet.team.size():
+			planet.focus(planet.team[i].position, 0.5)
+			if is_instance_valid(_team_toggle) and _team_toggle.visible:
+				_squad_panel.hide()
+
+
+# ---------- Ce qu'appelle le combat (combat.gd) ----------
+
+## La fiche du membre actif en combat (pas inscrite au journal)
+func combat_status(u: Dictionary, info: String) -> void:
+	sub_panel.visible = true
+	sub_name.text = "%s  ·  %s" % [u.name.to_upper(), "COMMANDEMENT" if planet and planet.combat and planet.combat.has_method("toggle_tactical_pause") else "À VOUS"]
+	sub_text.text = info
+	_update_hud()
+
+
+## La barre d'actions du combat, numérotée pour le clavier
+func action_grid(items: Array) -> void:
+	clear_actions()
+	combat_bar.visible = true
+	for i in items.size():
+		var it: Array = items[i]
+		var cb: Callable = it[2]
+		var b := T.button("%d  %s" % [i + 1, String(it[0]).to_upper()], func():
+			Audio.play("press")
+			cb.call(), _variation(it[1]), "Touche %d" % (i + 1))
+		b.custom_minimum_size = Vector2(140, 58)
+		b.add_theme_font_size_override("font_size", 19)
+		b.disabled = Color(it[1]).is_equal_approx(Color(0.4, 0.4, 0.45))
+		combat_bar.add_child(b)
+
+
+func combat_hp_changed() -> void:
+	if planet and planet.combat:
+		var h: Dictionary = planet.combat.member_hp()
+		for k in h:
+			Game.stats.hp[k] = h[k]
+	_update_hud()
+
+
+# ---------- Les lieux de la planète ----------
+
+func _event(who: String, text: String) -> void:
+	event_open = true
+	clear_actions()
+	say(who, text)
+
+
+func _close_event(text: String = "") -> void:
+	event_open = false
+	clear_actions()
+	if text != "":
+		say("SG-1", text)
+	_update_hud()
+
+
+func _on_poi(p: Dictionary) -> void:
+	var d: Dictionary = Data.PLANETS[current]
+	var tier := current + 1
+	match p.k:
+		"combat":
+			var foe: Dictionary = d.foes[p.f]
+			Audio.play("kree" if foe.a in ["jaffa", "jaffa2", "jaffa3", "serpent", "horus"] else "staff")
+			_event("CONTACT", "%s en vue ! Prenez position." % foe.n)
+			add_action("Engager le combat", C_FIGHT, func(): start_combat(p, foe.xp, foe.naq))
+			add_action("Se replier vers la porte", C_BACK, _retreat)
+		"boss":
+			var b: Dictionary = d.boss
+			Audio.play("staff")
+			_event(b.n.to_upper(), "« %s »" % b.q)
+			add_action("Affronter %s" % b.n, Color(0.95, 0.35, 0.3), func(): start_combat(p, b.xp, b.naq))
+			add_action("Se replier vers la porte", C_BACK, _retreat)
+		"tresor":
+			var g := randi_range(5, 12) * tier
+			Game.add_naq(g)
+			Audio.play("found")
+			planet.resolve(p, true)
+			_close_event("Une caisse goa'uld abandonnée : %d unités de naquadah." % g)
+		"ruines":
+			Audio.play("found")
+			_event("DR JACKSON", "Des inscriptions en langue des Anciens… et ce dispositif bourdonne encore.")
+			add_action("Étudier les inscriptions", C_GO, func():
+				var g := 8 * tier
+				planet.resolve(p, true)
+				_gain_xp(g)
+				_close_event("Daniel déchiffre un fragment de la mémoire des Anciens. +%d XP." % g))
+			add_action("Activer le dispositif", Color(0.95, 0.6, 0.25), func():
+				planet.resolve(p, true)
+				if randf() < 0.5:
+					Game.add_naq(15 * tier)
+					Audio.play("levelup")
+					_close_event("Le dispositif s'ouvre : un cristal de naquadah pur, +%d." % (15 * tier))
+				else:
+					Audio.play("zat")
+					_close_event("Une décharge projette l'équipe au sol. -%d PV chacun." % (3 * tier))
+					_hurt_all(3 * tier))
+		"allie":
+			_ally(p, tier)
+		"piege":
+			Audio.play("glider")
+			planet.resolve(p, true)
+			await planet.glider_strafe()
+			Audio.play("boom")
+			_close_event("Un planeur de la mort mitraille l'équipe en rase-mottes !")
+			_hurt_all(2 * tier + randi_range(0, 4))
+	_update_hud()
+
+
+## Un allié de passage : un Nox, un agent de la Tok'ra ou Thor
+func _ally(p: Dictionary, tier: int) -> void:
+	var a: String = ["nox", "tokra", "thor"].pick_random()
+	Audio.play("heal")
+	planet.show_ally(p, a)
+	match a:
+		"nox":
+			Game.heal_all()
+			_close_event("Un Nox apparaît sans bruit et soigne toute l'équipe.")
+		"tokra":
+			Game.add_naq(10 * tier)
+			_close_event("Un agent de la Tok'ra vous confie des renseignements et %d naquadah." % (10 * tier))
+		"thor":
+			Audio.play("asgard")
+			_gain_xp(10 * tier)
+			_close_event("Thor se téléporte un instant : « O'Neill. » +%d XP." % (10 * tier))
+	p.done = true
+
+
+# ---------- Le combat ----------
+
+func start_combat(p: Dictionary, xp: int, naq: int) -> void:
+	clear_actions()
+	_reward = {"p": p, "xp": xp, "naq": naq}
+	Audio.play("staff")
+	var c = RealtimeCombat.new() if current == 0 else CombatScript.new()
+	planet.add_child(c)
+	planet.combat = c
+	c.finished.connect(_on_combat_end)
+	c.start(planet, self, p, Game.team, Game.stats.hp, Game.stats.lvl, current + 1, Game.gear())
+
+
+func _on_combat_end(result: String) -> void:
+	var c = planet.combat
+	var p: Dictionary = _reward.p
+	var h: Dictionary = c.member_hp()
+	for k in h:
+		Game.stats.hp[k] = h[k]
+	var foes := []
+	for u in c.units:
+		if u.side == "foe":
+			foes.append(u.node)
+	planet.end_combat()
+	c.queue_free()
+	event_open = false
+	match result:
+		"win", "talk":
+			p.done = true
+			_hide_fallen(foes)
+			var xp: int = _reward.xp if result == "win" else int(_reward.xp / 2)
+			var naq: int = _reward.naq if result == "win" else 0
+			Game.add_naq(naq)
+			_gain_xp(xp)
+			if p.k == "boss":
+				_planet_freed()
+			else:
+				Audio.play("found")
+				_close_event(("Victoire ! +%d XP, +%d naquadah." % [xp, naq]) if result == "win" else ("Paix négociée. +%d XP." % xp))
+		"lose":
+			_evacuate()
+		"flee":
+			_retreat()
+	_update_hud()
+
+
+## Les ennemis vaincus rétrécissent puis disparaissent
+func _hide_fallen(foes: Array) -> void:
+	var tw := create_tween()
+	tw.tween_interval(2.0)
+	for f in foes:
+		tw.parallel().tween_property(f, "scale", Vector3.ONE * 0.01, 0.4).set_delay(2.0)
+	tw.tween_callback(func():
+		for f in foes:
+			if is_instance_valid(f):
+				f.hide())
+
+
+func _planet_freed() -> void:
+	var d: Dictionary = Data.PLANETS[current]
+	Audio.play("victory")
+	banner("%s LIBÉRÉE" % d.n.to_upper(), "%s EST VAINCU" % d.boss.n.to_upper(), T.GREEN)
+	var bratac_joined := Game.complete_mission(current)
+	if bratac_joined:
+		_close_event("Apophis est vaincu, Chulak est libérée ! Maître Bra'tac : « Je combattrai à vos côtés, Tau'ri. » Il rejoindra SG-1 à la prochaine mission.")
+	elif current == Data.PLANETS.size() - 1:
+		_close_event("Anubis est vaincu ! L'arme des Anciens est sauvée. Rentrez au SGC par la porte.")
+	else:
+		_close_event("%s est vaincu, %s est libérée ! Rejoignez la porte pour rentrer." % [d.boss.n, d.n])
+
+
+func _gain_xp(g: int) -> void:
+	Game.gain_xp(g)
+	_update_hud()
+
+
+func _on_level_up(lvl: int) -> void:
+	Audio.play("levelup")
+	say("SG-1", "Niveau %d ! L'équipe est plus solide et plus précise." % lvl)
+	banner("NIVEAU %d" % lvl, "+%d PV PAR MEMBRE  ·  PRÉCISION ACCRUE" % Data.HP_PER_LEVEL, T.BLUE)
+
+
+func _hurt_all(dmg: int) -> void:
+	var standing := Game.hurt_all(dmg)
+	Audio.play("hurt")
+	_update_hud()
+	if not standing:
+		_evacuate()
+
+
+func _retreat() -> void:
+	planet.retreat()
+	_close_event("L'équipe décroche et se replie près de la porte.")
+
+
+## Une trousse sur la carte, hors combat : soigne le membre le plus blessé
+func use_kit_map() -> void:
+	if planet and planet.combat and planet.combat.has_method("toggle_tactical_pause"):
+		planet.combat._use_kit()
+		return
+	if Game.stats.kits <= 0 or (planet and planet.combat):
+		return
+	var worst := Game.most_wounded()
+	if worst == "":
+		say("DR JACKSON", "Personne n'est blessé, gardons les trousses.")
+		return
+	Game.use_kit(worst)
+	Audio.play("heal")
+	say("SG-1", "%s se soigne. Trousses restantes : %d." % [Data.MEMBERS[worst].n, Game.stats.kits])
+	_update_hud()
+
+
+# ---------- Le départ de la planète ----------
+
+func _on_gate_near(near: bool) -> void:
+	if event_open or (planet and planet.combat):
+		return
+	clear_actions()
+	if near:
+		add_action("Composer la Terre sur le DHD" if Data.PLANETS[current].gate else "Appeler le Tel'tak tok'ra", C_GO, leave_planet)
+
+
+func leave_planet() -> void:
+	clear_actions()
+	if Data.PLANETS[current].gate:
+		say("COLONEL O'NEILL", "On rentre à la maison. Carter, le code IDC.")
+		Audio.play("dhd")
+		await planet.leave()
+		Audio.play("travel")
+		await fade(WHITE, 0.25).finished
+		_end_planet()
+		await fly_wormhole()
+		return_home()
+	else:
+		Audio.play("rings")
+		await planet.leave()
+		await fade(WHITE, 0.3).finished
+		_end_planet()
+		set_camera(CAM_CONTROL, 0.0)
+		fade(Color(DARK, 0.0), 0.6)
+		Game.heal_all()
+		Game.save_game()
+		say("GÉNÉRAL HAMMOND", "Le Tel'tak tok'ra vous a ramenés sains et saufs. Beau travail, SG-1.")
+		await wait(2.0)
+		show_menu()
+
+
+func _end_planet() -> void:
+	if hud:
+		hud.queue_free()
+		hud = null
+		squad.clear()
+	if planet:
+		planet.queue_free()
+		planet = null
+	event_open = false
+	room.visible = true
+	gate.visible = true
+	_sgc_env()
+	cam.current = true
+
+
+## Toute l'équipe à terre : rapatriement d'urgence
+func _evacuate() -> void:
+	clear_actions()
+	Audio.play("defeat")
+	say("SG-1", "Toute l'équipe est à terre ! On nous rapatrie !")
+	banner("RAPATRIEMENT", "TOUTE L'ÉQUIPE EST À TERRE", T.RED)
+	await wait(1.5)
+	await fade(Color(DARK, 1.0), 0.6).finished
+	_end_planet()
+	var lost := int(Game.stats.naq / 2)
+	Game.add_naq(-lost)
+	Game.heal_all()
+	Game.save_game()
+	set_camera(CAM_CONTROL, 0.0)
+	fade(Color(DARK, 0.0), 0.6)
+	say("DR FRAISER", "Vous revenez de loin, colonel. L'équipe a perdu %d naquadah dans la retraite." % lost)
+	await wait(2.5)
+	show_menu()
+
+
+# ---------- Mode démonstration (--auto) ----------
+
+## L'équipe va au premier combat et le joue toute seule, puis rentre
+func _auto_explore() -> void:
+	await wait(1.5)
+	var p: Dictionary = {}
+	for q in planet.pois:
+		if q.k == "combat":
+			p = q
+			break
+	planet.walk_to(p.tile)
+	for i in 60:
+		await wait(0.5)
+		if event_open:
+			break
+	await wait(4.0 if Cli.has("--fight") else 1.0)
+	if actions_box.get_child_count() > 0:
+		actions_box.get_child(0).pressed.emit()
+	if Cli.has("--fight"):
+		# Débogage : on s'arrête au premier tour de SG-1, un ennemi en cible
+		await wait(2.5)
+		var fc = planet.combat
+		for i in fc.units.size():
+			if fc.units[i].side == "foe":
+				fc.on_tap(fc.units[i].tile)
+				break
+		return
+	# Chaque membre vise l'ennemi le plus proche et tire, ou finit son tour
+	for round_i in 12:
+		await wait(1.0)
+		var c = planet.combat if planet else null
+		if c == null:
+			break
+		while c.busy or c.turn != "player":
+			await wait(0.3)
+			if planet == null or planet.combat == null:
+				break
+		if planet == null or planet.combat == null:
+			break
+		var u: Dictionary = c.units[c.active]
+		var best := -1
+		for i in c.units.size():
+			var e: Dictionary = c.units[i]
+			if e.side == "foe" and e.alive and (best < 0 or c._dist(u.tile, e.tile) < c._dist(u.tile, c.units[best].tile)):
+				best = i
+		if best >= 0 and c._dist(u.tile, c.units[best].tile) <= u.range:
+			c.on_tap(c.units[best].tile)
+			await wait(0.6)
+			c._player_shoot(false)
+		elif best >= 0 and not c.reach.is_empty():
+			var goal: Vector2i = c.units[best].tile
+			var pick: Vector2i = c.reach.keys()[0]
+			for t in c.reach:
+				if c._dist(t, goal) < c._dist(pick, goal):
+					pick = t
+			c.on_tap(pick)
+		else:
+			c.enemy_turn()
+	await wait(4.0)
+	if planet:
+		planet.walk_to(Vector2i(4, 3))
+		for i in 60:
+			await wait(0.5)
+			if actions_box.get_child_count() > 0 and not event_open:
+				break
+		await wait(1.0)
+		if actions_box.get_child_count() > 0:
+			actions_box.get_child(0).pressed.emit()

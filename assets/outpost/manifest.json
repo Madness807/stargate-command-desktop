@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "units": "metres",
+  "up_axis": "Y",
+  "front": "+Z; turret muzzle -Z",
+  "source": "dev/build_outpost_assets.py",
+  "third_party_artwork": false,
+  "note": "Original geometry and textures authored for this unofficial fan project. Stargate belongs to its rights holders.",
+  "models": {
+    "hq": {
+      "file": "models/hq.glb",
+      "triangles": 1238,
+      "mesh_surfaces": 2,
+      "bytes": 102160
+    },
+    "generator": {
+      "file": "models/generator.glb",
+      "triangles": 814,
+      "mesh_surfaces": 3,
+      "bytes": 65672
+    },
+    "infirmary": {
+      "file": "models/infirmary.glb",
+      "triangles": 834,
+      "mesh_surfaces": 2,
+      "bytes": 67716
+    },
+    "lab": {
+      "file": "models/lab.glb",
+      "triangles": 1148,
+      "mesh_surfaces": 2,
+      "bytes": 95048
+    },
+    "turret": {
+      "file": "models/turret.glb",
+      "triangles": 1726,
+      "mesh_surfaces": 3,
+      "bytes": 138536
+    },
+    "mine": {
+      "file": "models/mine.glb",
+      "triangles": 1202,
+      "mesh_surfaces": 3,
+      "bytes": 95588
+    },
+    "camp": {
+      "file": "models/camp.glb",
+      "triangles": 700,
+      "mesh_surfaces": 2,
+      "bytes": 57576
+    },
+    "supplies": {
+      "file": "models/supplies.glb",
+      "triangles": 424,
+      "mesh_surfaces": 1,
+      "bytes": 35864
+    },
+    "barrier": {
+      "file": "models/barrier.glb",
+      "triangles": 528,
+      "mesh_surfaces": 1,
+      "bytes": 44788
+    },
+    "construction": {
+      "file": "models/construction.glb",
+      "triangles": 488,
+      "mesh_surfaces": 1,
+      "bytes": 39704
+    },
+    "deposit": {
+      "file": "models/deposit.glb",
+      "triangles": 260,
+      "mesh_surfaces": 1,
+      "bytes": 21452
+    },
+    "ruins": {
+      "file": "models/ruins.glb",
+      "triangles": 600,
+      "mesh_surfaces": 1,
+      "bytes": 50380
+    },
+    "gate_platform": {
+      "file": "models/gate_platform.glb",
+      "triangles": 1212,
+      "mesh_surfaces": 1,
+      "bytes": 97916
+    }
+  }
+}
