@@ -9,13 +9,26 @@ func _ready() -> void:
 	var gate := Gate.new()
 	add_child(gate)
 	for n in 7:
-		await gate.engage_chevron(n).finished
+		var index: int = Gate.LOCK_ORDER[n]
+		var moving = gate.chevron_mechanisms[index][1]
+		var rest: Vector3 = moving.position
+		var animation := gate.engage_chevron(n)
+		animation.pause()
+		animation.custom_step(0.22)
+		check(is_equal_approx(gate.chevron_amounts[index], 1.0), "course atteinte")
+		if index != 0:
+			check(moving.position.distance_to(rest) > 0.05, "déplacement réel du chevron %d" % index)
+			check(gate.chevron_mechanisms[index][0].position.distance_to(gate.chevron_mechanisms[index][0].get_meta("rest_position")) > 0.05, "boîtier mobile")
+		else:
+			check(moving.get_blend_shape_value(0) > 0.99, "morph supérieur conservé")
 		for i in 9:
-			var expected := 1.0 if i in Gate.LOCK_ORDER.slice(0, n + 1) else 0.0
-			check(is_equal_approx(gate.chevron_amounts[i], expected), "état individuel chevron %d après symbole %d" % [i, n])
-			for mesh in gate.chevron_mechanisms[i]:
-				check(is_equal_approx(mesh.get_blend_shape_value(0), expected), "morph indépendant %d" % i)
-			check(gate.chevron_mechanisms[i][0].mesh.get_surface_count() > 0, "boîtier visible %d" % i)
+			if i != index:
+				check(gate.chevron_amounts[i] == 0.0, "les autres mécanismes restent au repos")
+		animation.custom_step(1.0)
+		check(is_zero_approx(gate.chevron_amounts[index]), "retour mécanique")
+		check(moving.position.is_equal_approx(rest), "retour sans dérive")
+		check(moving.material_override == gate.chevron_lit_mat, "verrouillage lumineux conservé")
+		animation.kill()
 	gate.reset_chevrons()
 	for amount in gate.chevron_amounts:
 		check(amount == 0.0, "réinitialisation mécanique")

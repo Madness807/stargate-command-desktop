@@ -52,7 +52,7 @@ Validation : community_asset_tests.tscn (transports réels sur Netu, animation e
 
 ## Iris et verrouillage individuel
 
-Les neuf boîtiers du modèle sont séparés par secteur en conservant leurs matériaux et morphs. Chaque symbole verrouille son propre mécanisme dans LOCK_ORDER ; les chevrons déjà encodés restent engagés jusqu’à la remise à zéro. Le menu et la campagne utilisent la même séquence. Les maillages préparés sont partagés entre instances, leurs états restent indépendants.
+Les neuf boîtiers du modèle sont séparés par secteur en conservant leurs matériaux et morphs. Chaque symbole actionne son propre mécanisme dans LOCK_ORDER : course radiale, maintien, retour au repos ; le chevron reste allumé. Seul le morph supérieur du GLB contient des déplacements réels ; les huit autres utilisent une translation radiale du boîtier et de la lumière. Le menu et la campagne utilisent la même séquence. Les maillages préparés sont partagés entre instances, leurs états restent indépendants.
 
 L’iris utilise vingt feuilles courbes chevauchantes, pivotant derrière la couronne. Son matériau découpe les parties rangées hors de l’ouverture. Une commande inverse reprend la position courante au lieu de faire sauter l’animation.
 

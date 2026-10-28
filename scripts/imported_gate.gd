@@ -86,6 +86,14 @@ static func attach(host: Node3D, radius: float) -> Dictionary:
 		housing.get_parent().add_child(piece)
 		piece.transform = housing.transform
 		mechanisms.append([piece, lights[i]])
+		# Seul le morph supérieur contient un déplacement dans le GLB source.
+		# Les autres chevrons nécessitent une course radiale explicite.
+		if i != 0:
+			var angle := TAU * i / 9.0
+			var travel := Vector3(-sin(angle), -cos(angle), 0.0) * 0.14
+			for moving in mechanisms[i]:
+				moving.set_meta("rest_position", moving.position)
+				moving.set_meta("lock_travel", moving.get_parent().global_basis.inverse() * host.global_basis * travel)
 	housing.hide()
 	morphs.assign(mechanisms[0])
 	for player in model.find_children("*", "AnimationPlayer", true, false):

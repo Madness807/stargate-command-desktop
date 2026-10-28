@@ -116,6 +116,8 @@ func _set_chevron_amount(amount: float, index: int) -> void:
 		for mesh in chevron_mechanisms[index]:
 			if mesh.mesh.get_blend_shape_count() > 0:
 				mesh.set_blend_shape_value(0, amount)
+			if mesh.has_meta("lock_travel"):
+				mesh.position = mesh.get_meta("rest_position") + mesh.get_meta("lock_travel") * amount
 	else:
 		chevron_bodies[index].position.y = -0.14 * amount
 	if index == 0 and imported_model != null:
@@ -401,13 +403,14 @@ func _set_ring(deg: float) -> void:
 	inner.rotation.z = deg_to_rad(-deg)
 
 
-## Verrouille le chevron correspondant au symbole, indépendamment des autres.
+## Course, verrouillage lumineux et retour mécanique du chevron du symbole.
 func engage_chevron(n: int) -> Tween:
 	var index: int = LOCK_ORDER[n]
 	var tw := create_tween().set_trans(Tween.TRANS_SINE)
 	tw.tween_method(_set_chevron_amount.bind(index), chevron_amounts[index], 1.0, 0.22)
 	tw.tween_callback(func(): light_chevron(n))
-	tw.tween_interval(0.25)
+	tw.tween_interval(0.35)
+	tw.tween_method(_set_chevron_amount.bind(index), 1.0, 0.0, 0.25)
 	return tw
 
 
