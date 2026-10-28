@@ -18,6 +18,12 @@ func _ready() -> void:
 	camera.fov = 42
 	var gate := preload("res://scripts/gate.gd").new()
 	add_child(gate)
+	for amount in [0.0, 1.0, 0.0]:
+		for i in 9:
+			gate._set_chevron_amount(amount, i)
+		await get_tree().create_timer(0.4).timeout
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png("/tmp/sg1-chevrons-%s.png" % str(amount))
 	for n in 3:
 		await gate.engage_chevron(n).finished
 	for amount in [1.0, 0.5, 0.0]:

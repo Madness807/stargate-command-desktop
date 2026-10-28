@@ -16,11 +16,26 @@ func _ready() -> void:
 		animation.pause()
 		animation.custom_step(0.22)
 		check(is_equal_approx(gate.chevron_amounts[index], 1.0), "course atteinte")
-		if index != 0:
-			check(moving.position.distance_to(rest) > 0.05, "déplacement réel du chevron %d" % index)
-			check(gate.chevron_mechanisms[index][0].position.distance_to(gate.chevron_mechanisms[index][0].get_meta("rest_position")) > 0.05, "boîtier mobile")
-		else:
-			check(moving.get_blend_shape_value(0) > 0.99, "morph supérieur conservé")
+		for mesh in gate.chevron_mechanisms[index]:
+			var arrays = mesh.mesh.surface_get_arrays(0)
+			var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			var blend: PackedVector3Array = mesh.mesh.surface_get_blend_shape_arrays(0)[0][Mesh.ARRAY_VERTEX]
+			var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+			var moved := 0
+			var fixed := 0
+			var maximum := 0.0
+			for v in indices:
+				var delta := vertices[v].distance_to(blend[v])
+				maximum = maxf(maximum, delta)
+				if delta > 0.001:
+					moved += 1
+				else:
+					fixed += 1
+			check(moved > 0 and maximum > 0.05, "déformation réelle du chevron %d" % index)
+			if mesh == gate.chevron_mechanisms[index][0]:
+				check(fixed > 0, "parties fixes du boîtier conservées %d" % index)
+			check(mesh.get_blend_shape_value(0) > 0.99, "morph actionné")
+
 		for i in 9:
 			if i != index:
 				check(gate.chevron_amounts[i] == 0.0, "les autres mécanismes restent au repos")

@@ -116,8 +116,6 @@ func _set_chevron_amount(amount: float, index: int) -> void:
 		for mesh in chevron_mechanisms[index]:
 			if mesh.mesh.get_blend_shape_count() > 0:
 				mesh.set_blend_shape_value(0, amount)
-			if mesh.has_meta("lock_travel"):
-				mesh.position = mesh.get_meta("rest_position") + mesh.get_meta("lock_travel") * amount
 	else:
 		chevron_bodies[index].position.y = -0.14 * amount
 	if index == 0 and imported_model != null:
