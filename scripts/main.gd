@@ -556,7 +556,7 @@ func start_dial(i: int) -> void:
 		await gate.spin_to(adr[n], 1 if n % 2 == 0 else -1).finished
 		Audio.loop_stop("dial", 0.12)
 		Audio.play("lock")
-		await gate.engage_master().finished
+		await gate.engage_chevron(n).finished
 		gate.light_chevron(n)
 		lock_slot(n)
 		say("SERGENT HARRIMAN", "Chevron %d enclenché." % (n + 1) if n < 6 else "Chevron sept verrouillé !")
@@ -735,7 +735,7 @@ func _advance_title_gate() -> void:
 		"lock":
 			Audio.loop_stop("dial", 0.12)
 			Audio.play("lock", -22.0)
-			_title_after(gate.engage_master(), "encoded")
+			_title_after(gate.engage_chevron(_title_encoded), "encoded")
 		"encoded":
 			gate.light_chevron(_title_encoded)
 			_title_encoded += 1

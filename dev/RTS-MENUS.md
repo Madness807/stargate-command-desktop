@@ -49,3 +49,11 @@ Le choix du moteur dans main.gd ne dépend plus de l'indice de planète : toutes
 Les sources, transformations et licences sont décrites dans assets/community/SOURCES.md. Les sources d'origine restent dans imports/. scripts/imported_assets.gd partage la préparation et les caches entre la porte et ces modèles.
 
 Validation : community_asset_tests.tscn (transports réels sur Netu, animation et états), campaign_realtime_tests.tscn (les six planètes), menu_ui_tests.tscn (dont liaison console/étude scientifique). Captures des modèles : community_visual.tscn.
+
+## Iris et verrouillage individuel
+
+Les neuf boîtiers du modèle sont séparés par secteur en conservant leurs matériaux et morphs. Chaque symbole verrouille son propre mécanisme dans LOCK_ORDER ; les chevrons déjà encodés restent engagés jusqu’à la remise à zéro. Le menu et la campagne utilisent la même séquence. Les maillages préparés sont partagés entre instances, leurs états restent indépendants.
+
+L’iris utilise vingt feuilles courbes chevauchantes, pivotant derrière la couronne. Son matériau découpe les parties rangées hors de l’ouverture. Une commande inverse reprend la position courante au lieu de faire sauter l’animation.
+
+Validation : `res://dev/gate_mechanics_tests.tscn`, `res://dev/imported_gate_tests.tscn`, `res://dev/title_gate_tests.tscn`. Contrôle visuel : `./start.sh res://dev/iris_visual.tscn` (captures `/tmp/sg1-iris-*.png`).

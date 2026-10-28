@@ -7,6 +7,8 @@ const CACHE := "res://assets/stargate/mobile.scn"
 static func _scene() -> PackedScene:
 	return preload("res://scripts/imported_assets.gd").prepared(PATH, CACHE)
 
+static var _housing_parts: Array[ArrayMesh] = []
+
 static func attach(host: Node3D, radius: float) -> Dictionary:
 	var packed := _scene()
 	if packed == null:
@@ -46,6 +48,46 @@ static func attach(host: Node3D, radius: float) -> Dictionary:
 			inner.free()
 			visual.free()
 			return {}
+	# Le boîtier source rassemble les neuf mécanismes : séparer ses triangles
+	# permet de piloter chaque morph sans déformer les huit autres chevrons.
+	var housing := model.find_child("2", true, false) as MeshInstance3D
+	if _housing_parts.is_empty():
+		var transform := host.global_transform.affine_inverse() * housing.global_transform
+		for sector in 9:
+			var part := ArrayMesh.new()
+			part.blend_shape_mode = housing.mesh.blend_shape_mode
+			for b in housing.mesh.get_blend_shape_count():
+				part.add_blend_shape(housing.mesh.get_blend_shape_name(b))
+			for surface in housing.mesh.get_surface_count():
+				var arrays := housing.mesh.surface_get_arrays(surface)
+				var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+				var source: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+				if source.is_empty():
+					for v in vertices.size():
+						source.append(v)
+				var selected := PackedInt32Array()
+				for t in range(0, source.size(), 3):
+					var center := transform * ((vertices[source[t]] + vertices[source[t + 1]] + vertices[source[t + 2]]) / 3.0)
+					if posmod(roundi(atan2(center.x, center.y) * 9.0 / TAU), 9) == sector:
+						selected.append_array(source.slice(t, t + 3))
+				if selected.is_empty():
+					continue
+				for custom in range(Mesh.ARRAY_CUSTOM0, Mesh.ARRAY_CUSTOM3 + 1):
+					arrays[custom] = null
+				arrays[Mesh.ARRAY_INDEX] = selected
+				part.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, housing.mesh.surface_get_blend_shape_arrays(surface))
+				part.surface_set_material(part.get_surface_count() - 1, housing.mesh.surface_get_material(surface))
+			_housing_parts.append(part)
+	var mechanisms: Array[Array] = []
+	for i in 9:
+		var piece := MeshInstance3D.new()
+		piece.name = "ChevronMechanism%d" % i
+		piece.mesh = _housing_parts[i]
+		housing.get_parent().add_child(piece)
+		piece.transform = housing.transform
+		mechanisms.append([piece, lights[i]])
+	housing.hide()
+	morphs.assign(mechanisms[0])
 	for player in model.find_children("*", "AnimationPlayer", true, false):
 		player.stop()
-	return {"visual": visual, "inner": inner, "lights": lights, "morphs": morphs}
+	return {"visual": visual, "inner": inner, "lights": lights, "morphs": morphs, "mechanisms": mechanisms}

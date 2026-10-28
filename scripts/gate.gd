@@ -18,7 +18,12 @@ var ring_angle := 0.0                 # degrés, 0 = point d'origine (glyphe 1) 
 var chevron_lights: Array[MeshInstance3D] = []
 var chevron_lit_mat: StandardMaterial3D
 var chevron_off_mat: StandardMaterial3D
-var master: Node3D                    # le chevron du haut, qui s'abaisse à chaque glyphe
+var chevron_bodies: Array[Node3D] = []
+var chevron_mechanisms: Array[Array] = []
+var chevron_amounts: Array[float] = []
+var _iris_amount := 0.0
+var _iris_tween: Tween
+var master: Node3D                    # référence de compatibilité au chevron supérieur
 var horizon_mat: ShaderMaterial
 var iris_pivots: Array[Node3D] = []
 var iris_closed := true
@@ -72,6 +77,8 @@ func _build_imported() -> bool:
 	inner = result.inner
 	chevron_lights.assign(result.lights)
 	_imported_morphs.assign(result.morphs)
+	chevron_mechanisms.assign(result.mechanisms)
+	chevron_amounts.assign([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 	master = Node3D.new()
 	master.name = "MasterChevronMechanism"
 	add_child(master)
@@ -95,14 +102,24 @@ func _build_imported() -> bool:
 
 
 func reset_mechanism() -> void:
-	_set_master_amount(0.0)
+	for i in 9:
+		_set_chevron_amount(0.0, i)
 
 
 func _set_master_amount(amount: float) -> void:
-	master.position.y = -0.14 * amount
-	for mesh in _imported_morphs:
-		if mesh.mesh.get_blend_shape_count() > 0:
-			mesh.set_blend_shape_value(0, amount)
+	_set_chevron_amount(amount, 0)
+
+
+func _set_chevron_amount(amount: float, index: int) -> void:
+	chevron_amounts[index] = amount
+	if not chevron_mechanisms.is_empty():
+		for mesh in chevron_mechanisms[index]:
+			if mesh.mesh.get_blend_shape_count() > 0:
+				mesh.set_blend_shape_value(0, amount)
+	else:
+		chevron_bodies[index].position.y = -0.14 * amount
+	if index == 0 and imported_model != null:
+		master.position.y = -0.14 * amount
 
 
 # ---------- Géométrie ----------
@@ -281,6 +298,8 @@ func _build_chevrons() -> void:
 		_mesh(ribs.commit(), _dark, body)
 
 		chevron_lights.append(light)
+		chevron_bodies.append(body)
+		chevron_amounts.append(0.0)
 		if i == 0:
 			master = body
 	chevron_glow = OmniLight3D.new()
@@ -333,18 +352,27 @@ func _build_horizon() -> void:
 
 
 func _build_iris() -> void:
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.62, 0.65, 0.7)
-	mat.metallic = 0.9
-	mat.roughness = 0.28
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	# Profil en feuille, courbé en spirale. Les lames dépassent légèrement
+	# le centre pour fermer sans trou et se rangent derrière la couronne.
+	var outline := PackedVector2Array()
+	for side in [0, 1]:
+		for j in 33:
+			var t := float(j if side == 0 else 32 - j) / 32.0
+			var radius := lerpf(0.0, R_HORIZON + 0.22, t)
+			var angle := 0.48 * (1.0 - t) + (-0.035 if side == 0 else TAU / 20.0 + 0.045)
+			var point := Vector2(sin(angle), cos(angle)) * radius
+			outline.append(point - Vector2(0, R_HORIZON + 0.10))
+	var blade_mesh := _extrude(outline, -0.008, 0.008)
 	for i in 20:
 		var a := TAU * i / 20.0
 		var pivot := Node3D.new()
-		pivot.position = _pt(R_HORIZON + 0.02, a, 0.12 + 0.004 * i)
+		pivot.name = "IrisBlade%02d" % i
+		pivot.position = _pt(R_HORIZON + 0.10, a, 0.25 + 0.0015 * i)
 		add_child(pivot)
-		var blade := _mesh(_box(Vector3(0.9, 2.62, 0.02)), mat, pivot)
-		blade.position = Vector3(0.28, -1.28, 0)
+		var mat := ShaderMaterial.new()
+		mat.shader = preload("res://shaders/iris.gdshader")
+		mat.set_shader_parameter("shade", 0.43 + 0.025 * (i % 3))
+		_mesh(blade_mesh, mat, pivot)
 		iris_pivots.append(pivot)
 		pivot.set_meta("angle", a)
 	_place_iris(0.0)
@@ -373,17 +401,21 @@ func _set_ring(deg: float) -> void:
 	inner.rotation.z = deg_to_rad(-deg)
 
 
-## Le chevron du haut s'abaisse puis remonte, comme quand il encode un symbole.
-func engage_master() -> Tween:
-	var tw := create_tween()
-	tw.tween_method(_set_master_amount, 0.0, 1.0, 0.18)
-	tw.tween_callback(func(): chevron_lights[0].material_override = chevron_lit_mat)
-	tw.tween_interval(0.35)
-	tw.tween_method(_set_master_amount, 1.0, 0.0, 0.25)
+## Verrouille le chevron correspondant au symbole, indépendamment des autres.
+func engage_chevron(n: int) -> Tween:
+	var index: int = LOCK_ORDER[n]
+	var tw := create_tween().set_trans(Tween.TRANS_SINE)
+	tw.tween_method(_set_chevron_amount.bind(index), chevron_amounts[index], 1.0, 0.22)
+	tw.tween_callback(func(): light_chevron(n))
+	tw.tween_interval(0.25)
 	return tw
 
 
-## Allume le chevron de rang n (0 à 6) ; le haut ne reste allumé qu'au 7e.
+func engage_master() -> Tween:
+	return engage_chevron(6)
+
+
+## Allume le chevron de rang n (0 à 6).
 func light_chevron(n: int) -> void:
 	chevron_lights[LOCK_ORDER[n]].material_override = chevron_lit_mat
 	if n < 6:
@@ -392,6 +424,7 @@ func light_chevron(n: int) -> void:
 
 
 func reset_chevrons() -> void:
+	reset_mechanism()
 	for l in chevron_lights:
 		l.material_override = chevron_off_mat
 	chevron_glow.light_energy = 0.0
@@ -423,10 +456,13 @@ func shutdown(duration: float = 0.9) -> Tween:
 
 
 func _place_iris(closed_amount: float) -> void:
+	_iris_amount = closed_amount
 	for p in iris_pivots:
 		var a: float = p.get_meta("angle")
 		# Fermé : la lame pointe vers le centre, en biais ; ouvert : elle se range le long du bord
-		p.rotation.z = -a + deg_to_rad(lerp(85.0, 14.0, closed_amount))
+		var turn := deg_to_rad(lerpf(100.0, 0.0, closed_amount))
+		p.rotation.z = -a + turn
+		(p.get_child(0).material_override as ShaderMaterial).set_shader_parameter("turn", turn)
 
 
 func _set_iris_visible(v: bool) -> void:
@@ -436,9 +472,12 @@ func _set_iris_visible(v: bool) -> void:
 
 func set_iris(closed: bool, duration: float = 0.8) -> Tween:
 	iris_closed = closed
+	if _iris_tween and _iris_tween.is_valid():
+		_iris_tween.kill()
 	_set_iris_visible(true)
 	var tw := create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	tw.tween_method(_place_iris, 0.0 if closed else 1.0, 1.0 if closed else 0.0, duration)
+	_iris_tween = tw
+	tw.tween_method(_place_iris, _iris_amount, 1.0 if closed else 0.0, duration)
 	if not closed:
 		tw.tween_callback(func(): _set_iris_visible(false))
 	return tw
