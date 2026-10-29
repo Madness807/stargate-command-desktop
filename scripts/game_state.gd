@@ -6,7 +6,11 @@ const Data = preload("res://scripts/data.gd")
 
 ## Variable pour que les tests (dev/tests.gd) écrivent ailleurs que dans la vraie partie
 var save_path := "user://sg1_3d.json"
-const SAVE_VERSION := 1
+const SAVE_VERSION := 2
+const SessionSave = preload("res://scripts/session_save.gd")
+var mission_state := {}
+var mission_capture := Callable()
+var _save_depth := 0
 
 signal changed
 signal leveled_up(level: int)
@@ -32,9 +36,13 @@ func has_save() -> bool:
 
 func load_game() -> void:
 	stats = _fresh()
+	mission_state = {}
 	if has_save():
 		var d = JSON.parse_string(FileAccess.get_file_as_string(save_path))
 		if d is Dictionary:
+			var restored := SessionSave.unpack(d.get("mission", ""))
+			if restored.get("version", 0) == 1 and int(restored.get("planet", -1)) in range(Data.PLANETS.size()):
+				mission_state = restored
 			for k in ["naq", "xp", "lvl", "done", "weapon", "armor", "kits"]:
 				if d.has(k):
 					stats[k] = int(d[k])
@@ -60,23 +68,32 @@ func _sanitize() -> void:
 
 
 ## Écrit d'abord un fichier temporaire puis le renomme : une coupure en pleine écriture ne corrompt pas la partie
-func save_game() -> void:
+func save_game() -> bool:
+	if _save_depth > 0:
+		return true
+	if mission_capture.is_valid():
+		mission_state = mission_capture.call()
 	var out := stats.duplicate(true)
 	out["version"] = SAVE_VERSION
-	var tmp := save_path + ".tmp"
-	var f := FileAccess.open(tmp, FileAccess.WRITE)
-	if f == null:
-		push_error("Sauvegarde impossible (%s) : %s" % [error_string(FileAccess.get_open_error()), tmp])
-		return
-	f.store_string(JSON.stringify(out))
-	f.close()
-	var err := DirAccess.rename_absolute(ProjectSettings.globalize_path(tmp), ProjectSettings.globalize_path(save_path))
-	if err != OK:
-		push_error("Sauvegarde impossible (%s) : %s" % [error_string(err), save_path])
+	out["mission"] = SessionSave.pack(mission_state) if not mission_state.is_empty() else ""
+	if not SessionSave.write(save_path, out):
+		push_error("Sauvegarde impossible : " + save_path)
+		return false
 	changed.emit()
+	return true
+
+func begin_transaction() -> void:
+	_save_depth += 1
+
+func end_transaction() -> bool:
+	_save_depth = maxi(0, _save_depth - 1)
+	return save_game()
 
 
 func new_game() -> void:
+	_save_depth = 0
+	mission_state = {}
+	mission_capture = Callable()
 	stats = _fresh()
 	refresh_team()
 	heal_all()

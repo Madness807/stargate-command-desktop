@@ -4,6 +4,7 @@ extends Control
 
 const T = preload("res://scripts/ui_theme.gd")
 const Data = preload("res://scripts/data.gd")
+const CombatStats = preload("res://scripts/combat_stats.gd")
 const People = preload("res://scripts/people.gd")
 
 const TOP_H := 64
@@ -381,6 +382,7 @@ func _mission_sheet(v: VBoxContainer, i: int) -> void:
 
 	v.add_child(T.label("RAPPORT", "Section"))
 	v.add_child(T.wrap(T.label(p.brief, "Body", T.TEXT)))
+	v.add_child(T.wrap(T.label(Data.mission_risk(Settings.value("difficulty")), "Body", T.AMBER)))
 	v.add_child(T.wrap(T.label("COMMANDEMENT EN TEMPS RÉEL · Déplacements et tirs simultanés dans toutes les missions. Sélectionnez un membre ou SG-1 entière, puis donnez un ordre sur le terrain ou sur un ennemi. Espace : pause tactique / reprise.", "Body", T.BLUE)))
 	v = outer
 
@@ -392,12 +394,16 @@ func _mission_sheet(v: VBoxContainer, i: int) -> void:
 	cols.add_child(threats)
 	threats.add_child(T.label("MENACES", "Section"))
 	for f in p.foes:
-		threats.add_child(_kv(f.n, "PUISS. %d" % f.pow))
+		var enemy := CombatStats.enemy(f.a, false, i + 1, Settings.value("difficulty"))
+		var row := _kv(f.n, "%d PV · %d cases" % [enemy.hp, enemy.range])
+		row.tooltip_text = "%d dégâts par tir · %s" % [enemy.dmg, "attaque au contact" if enemy.range <= 1 else "attaque à distance"]
+		threats.add_child(row)
 	var boss := VBoxContainer.new()
 	boss.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	cols.add_child(boss)
 	boss.add_child(T.label("CIBLE PRINCIPALE", "Section"))
-	boss.add_child(_kv(p.boss.n, "PUISS. %d" % p.boss.pow, T.RED))
+	var guardian := CombatStats.enemy(p.boss.a, true, i + 1, Settings.value("difficulty"))
+	boss.add_child(_kv(p.boss.n, "%d PV · %d cases" % [guardian.hp, guardian.range], T.RED))
 	var q := T.wrap(T.label("« %s »" % p.boss.q, "Body", T.DIM))
 	q.add_theme_font_size_override("font_size", 19)
 	boss.add_child(q)
@@ -591,7 +597,7 @@ func _armory() -> void:
 	kv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	kh.add_child(kv)
 	kv.add_child(_title_line("Trousses de soins", "%d / %d" % [s.kits, Data.KIT_MAX]))
-	kv.add_child(T.wrap(T.label("Une action en combat ou ✚ sur la carte : +%d PV." % Data.kit_heal(int(s.lvl)), "Body", T.DIM)))
+	kv.add_child(T.wrap(T.label("En combat : soigne le membre sélectionné. Sur la carte, ✚ soigne le plus blessé. +%d PV par trousse." % Data.kit_heal(int(s.lvl)), "Body", T.DIM)))
 	if int(s.kits) < Data.KIT_MAX:
 		kh.add_child(_buy_button(Data.KIT_PRICE, func(): _buy("kits", int(s.kits) + 1, Data.KIT_PRICE)))
 	else:

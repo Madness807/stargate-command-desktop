@@ -25,11 +25,14 @@ var idx := 0
 var n_tiles := N
 var tile_size := T
 var combat: Node = null
+var mission: RefCounted
+var generation_seed := 0
 var data: Dictionary
 var rng := RandomNumberGenerator.new()
 var grid := AStarGrid2D.new()
 var blocked := {}
 var tile_nodes := {}          # case -> obstacle
+var opaque_tiles := {}       # Décors assez hauts pour masquer un tir ; les objets bas restent des couverts.
 var pois: Array = []          # {tile, k, f, done, node, actors}
 var seen := {}
 var fog: MeshInstance3D
@@ -76,7 +79,10 @@ static func pos_tile(p: Vector3) -> Vector2i:
 
 func setup(planet_index: int, members: Array, seed_value: int) -> void:
 	idx = planet_index
+	generation_seed = seed_value
 	data = Data.PLANETS[idx]
+	if idx == 0:
+		mission = preload("res://scripts/abydos_mission.gd").new()
 	rng.seed = seed_value
 	for attempt in 30:
 		if _generate():
@@ -111,6 +117,8 @@ func _reserved(t: Vector2i) -> bool:
 func _generate() -> bool:
 	blocked.clear()
 	pois.clear()
+	if idx == 0:
+		return _generate_abydos()
 	# La porte (ou la plateforme des anneaux) et le DHD
 	if data.gate:
 		for t in [GATE_TILE, GATE_TILE + Vector2i(-1, 1), GATE_TILE + Vector2i(1, -1), GATE_TILE + Vector2i(-1, 0), GATE_TILE + Vector2i(0, -1)]:
@@ -163,6 +171,33 @@ func _generate() -> bool:
 	return true
 
 
+func _generate_abydos() -> bool:
+	for t in [GATE_TILE, Vector2i(1, 3), Vector2i(3, 1), Vector2i(1, 2), Vector2i(2, 1)]:
+		blocked[t] = "gate"
+	blocked[DHD_TILE] = "dhd"
+	for x in range(12, 15):
+		for y in range(12, 15):
+			blocked[Vector2i(x, y)] = "lair"
+	# Deux approches de la pyramide : passage est avec patrouille, détour ouest.
+	for t in [Vector2i(7, 3), Vector2i(7, 4), Vector2i(7, 5), Vector2i(10, 5), Vector2i(11, 5), Vector2i(12, 5), Vector2i(4, 10), Vector2i(5, 10), Vector2i(10, 13)]:
+		blocked[t] = "obj"
+	pois = [
+		{"tile": Vector2i(5, 7), "k": "allie", "id": "kasuf", "f": 0, "done": false},
+		{"tile": Vector2i(10, 3), "k": "combat", "id": "patrol", "f": 0, "done": false},
+		{"tile": Vector2i(7, 10), "k": "combat", "id": "translation", "f": 0, "done": false, "console": Vector2i(6, 11)},
+		{"tile": Vector2i(14, 7), "k": "combat", "id": "beast", "f": 1, "done": false},
+		{"tile": BOSS_TILE, "k": "boss", "id": "klorel", "f": 0, "done": false, "console": Vector2i(10, 10)}
+	]
+	for p in pois:
+		if p.has("console"):
+			blocked[p.console] = "console"
+	_setup_grid()
+	for p in pois:
+		if grid.get_id_path(START, p.tile).is_empty():
+			return false
+	return true
+
+
 func _setup_grid() -> void:
 	grid = AStarGrid2D.new()
 	grid.region = Rect2i(0, 0, N, N)
@@ -180,8 +215,11 @@ func _build_terrain() -> void:
 
 
 func _build_props() -> void:
+	opaque_tiles.clear()
 	for t in blocked:
 		var kind: String = blocked[t]
+		if kind in ["lair", "gate", "wall"]:
+			opaque_tiles[t] = true
 		if kind == "obj":
 			var o: Node3D = Terrain.obstacle(data.n, rng)
 			if o == null:
@@ -190,6 +228,14 @@ func _build_props() -> void:
 			o.rotation.y = rng.randf() * TAU
 			add_child(o)
 			tile_nodes[t] = o
+			var top := 0.0
+			for mesh in o.find_children("*", "MeshInstance3D", true, false):
+				var bounds: AABB = mesh.global_transform * mesh.get_aabb()
+				top = maxf(top, bounds.end.y)
+			if o is MeshInstance3D:
+				top = maxf(top, (o.global_transform * o.get_aabb()).end.y)
+			if top >= 1.8:
+				opaque_tiles[t] = true
 	var l := Props.lair(data.lair)
 	l.position = tile_pos(LAIR_TILE)
 	l.rotation.y = PI / 4.0 + PI
@@ -216,6 +262,12 @@ func _build_props() -> void:
 		add_child(ring_pad)
 	for p in pois:
 		_build_poi(p)
+		if p.has("console"):
+			var console := Props.ancient()
+			console.position = tile_pos(p.console)
+			add_child(console)
+			p["console_node"] = console
+			p["console_label"] = _label_objective(console, "DANIEL · TRADUCTION" if p.id == "translation" else "CARTER · BOUCLIER")
 	# Les petits décors, hors des cases occupées et loin des lieux à visiter
 	var free := []
 	for x in N:
@@ -272,8 +324,33 @@ func _build_poi(p: Dictionary) -> void:
 			node.add_child(Props.ancient())
 		"allie":
 			node.add_child(Props.question())
+			if p.get("id", "") == "kasuf":
+				_label_objective(node, "KASUF · PREMIER CONTACT")
 		"piege":
 			pass
+
+
+func _label_objective(node: Node3D, text: String) -> Label3D:
+	var label := Label3D.new()
+	label.text = text
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.font_size = 36
+	label.pixel_size = 0.009
+	label.position.y = 2.7
+	label.modulate = Color(0.5, 0.85, 1.0)
+	node.add_child(label)
+	return label
+
+
+func objective_tile() -> Vector2i:
+	if mission == null:
+		return leader_tile
+	if mission.recovered:
+		return Vector2i(4, 3)
+	for p in pois:
+		if p.get("id", "") == mission.next_id():
+			return p.tile
+	return leader_tile
 
 
 func _build_team(members: Array) -> void:
@@ -396,7 +473,9 @@ func _update_fog() -> void:
 		tile_nodes[t].visible = seen.has(t)
 	for p in pois:
 		if p.node:
-			p.node.visible = seen.has(p.tile) or p.k == "boss"
+			p.node.visible = (seen.has(p.tile) or p.k == "boss") and (not p.done or p.k == "ruines")
+		if p.has("console_node"):
+			p.console_node.visible = seen.has(p.console)
 
 
 # ---------- Caméra et toucher ----------
@@ -587,6 +666,8 @@ func _nearest_free(t: Vector2i) -> Vector2i:
 # ---------- Déplacement de l'équipe ----------
 
 func walk_to(t: Vector2i) -> void:
+	if input_locked or combat != null:
+		return
 	var ids := grid.get_id_path(leader_tile, t)
 	if ids.size() < 2:
 		return
@@ -890,3 +971,60 @@ func end_combat() -> void:
 	leader_tile = pos_tile(team[0].position)
 	path.clear()
 	moving = false
+
+
+func snapshot() -> Dictionary:
+	var members := []
+	for member in team:
+		members.append({"kind": member.kind, "position": member.position, "rotation": member.rotation})
+	var resolved := []
+	for p in pois:
+		resolved.append(bool(p.done))
+	var operation := {}
+	if mission != null:
+		for key in ["contacted", "translated", "shield_disabled", "recovered", "extracted"]:
+			operation[key] = mission.get(key)
+	return {"seed": generation_seed, "members": members, "resolved": resolved, "seen": seen.keys(),
+		"leader": leader_tile, "path": path.duplicate(), "moving": moving, "operation": operation,
+		"camera": {"position": cam_pivot.position, "yaw": yaw, "pitch": pitch, "distance": dist}}
+
+
+func restore_snapshot(state: Dictionary) -> void:
+	for i in team.size():
+		team[i].position = state.members[i].position
+		team[i].rotation = state.members[i].rotation
+	leader_tile = state.leader
+	path = state.path.duplicate()
+	moving = state.moving
+	seen.clear()
+	for tile in state.seen:
+		seen[tile] = true
+	for i in pois.size():
+		var p: Dictionary = pois[i]
+		p.done = state.resolved[i]
+		if p.done:
+			if p.k in ["combat", "boss"]:
+				for actor in p.actors:
+					actor.hide()
+			elif p.k == "ruines":
+				var panel = p.node.find_child("AncientControlPanel", true, false)
+				if panel and panel.has_method("activate"):
+					panel.activate()
+			else:
+				p.node.hide()
+	if mission != null:
+		for key in state.operation:
+			mission.set(key, state.operation[key])
+		for p in pois:
+			if p.has("console_label") and ((p.id == "translation" and mission.translated) or (p.id == "klorel" and mission.shield_disabled)):
+				p.console_label.text = "CODE TRADUIT" if p.id == "translation" else "BOUCLIER COUPÉ"
+				p.console_label.modulate = Color(0.55, 0.95, 0.65)
+				if p.console_node.has_method("activate"):
+					p.console_node.activate()
+	cam_pivot.position = state.camera.position
+	yaw = state.camera.yaw
+	pitch = state.camera.pitch
+	dist = state.camera.distance
+	_update_cam()
+	_update_fog()
+	input_locked = false

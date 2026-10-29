@@ -33,6 +33,14 @@ func _ready() -> void:
 			push_warning("Son introuvable : %s" % path)
 
 
+func _exit_tree() -> void:
+	# Libère aussi les lectures ponctuelles et les boucles en cours de fondu.
+	for child in get_children():
+		if child is AudioStreamPlayer:
+			child.stop()
+	_loops.clear()
+
+
 func set_background_mute(enabled: bool) -> void:
 	_mute_background = enabled
 	_update_master_mute()
@@ -109,8 +117,10 @@ func loop_stop(n: String, fade: float = 0.3) -> void:
 	if not is_instance_valid(p):
 		return
 	if fade <= 0.0:
+		p.stop()
 		p.queue_free()
 		return
 	var tw := p.create_tween()
 	tw.tween_property(p, "volume_db", -45.0, fade)
+	tw.tween_callback(p.stop)
 	tw.tween_callback(p.queue_free)

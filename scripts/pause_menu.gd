@@ -2,10 +2,16 @@ extends Control
 ## Le menu pause : il met l'arbre en pause et reste actif pendant celle-ci.
 ## Il ne sait rien de la partie : main.gd l'ouvre avec ce qu'il faut afficher et écoute ses signaux.
 
+const Data = preload("res://scripts/data.gd")
 const T = preload("res://scripts/ui_theme.gd")
 const SettingsMenu = preload("res://scripts/settings_menu.gd")
 
 signal abandon_requested(to_title: bool)
+signal save_requested
+signal suspend_requested
+signal quit_requested
+var _save_notice := ""
+var mission_help := ""
 
 var _panel: PanelContainer
 var _box: VBoxContainer
@@ -34,6 +40,7 @@ func open(subtitle: String, on_planet: bool, can_abandon: bool) -> void:
 	_subtitle = subtitle
 	_on_planet = on_planet
 	_can_abandon = can_abandon
+	_save_notice = ""
 	get_tree().paused = true
 	visible = true
 	Audio.play("press")
@@ -85,19 +92,27 @@ func _main_page() -> void:
 	_button("Options", _options)
 	_button("Commandes", _controls)
 	if _on_planet:
+		var save_button := _button("Sauvegarder", save_requested.emit, "Ghost")
+		save_button.disabled = not _can_abandon
 		var ab := _button("Abandonner la mission", func(): _confirm("Rentrer au SGC ? La planète sera à refaire ; l'expérience et le naquadah gagnés sont conservés.",
 			"Rentrer au SGC", func(): _abandon(false)), "Danger", "Retour au SGC")
 		ab.disabled = not _can_abandon
-		var mm := _button("Menu principal", func(): _confirm("Quitter la mission pour l'écran titre ? La planète sera à refaire.",
-			"Écran titre", func(): _abandon(true)), "Ghost")
+		var mm := _button("Sauvegarder et menu principal", suspend_requested.emit, "Ghost")
 		mm.disabled = not _can_abandon
 		if not _can_abandon:
 			var w := T.wrap(T.label("Attendez la fin de l'action en cours pour quitter la planète.", "Body", T.DIM))
 			w.add_theme_font_size_override("font_size", 18)
 			w.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			_box.add_child(w)
-	_button("Quitter le jeu", func(): _confirm("Quitter le jeu ? La progression enregistrée au SGC est conservée.",
-		"Quitter", func(): get_tree().quit()), "Danger")
+	if not _save_notice.is_empty():
+		_box.add_child(T.wrap(T.label(_save_notice, "Body", T.BLUE)))
+	var quit := _button("Sauvegarder et quitter" if _on_planet else "Quitter le jeu", func(): _confirm("Quitter le jeu ? La mission en cours sera sauvegardée pour la prochaine reprise." if _on_planet else "Quitter le jeu ?",
+		"Quitter", quit_requested.emit), "Danger")
+	quit.disabled = _on_planet and not _can_abandon
+
+func save_feedback(ok: bool) -> void:
+	_save_notice = "Mission sauvegardée." if ok else "Sauvegarde impossible. La partie reste ouverte ; réessayez avant de quitter."
+	_main_page()
 
 
 func _abandon(to_title: bool) -> void:
@@ -116,6 +131,9 @@ func _options() -> void:
 func _controls() -> void:
 	_clear("sub")
 	_head("COMMANDES", "")
+	if _on_planet:
+		_box.add_child(T.wrap(T.label(mission_help, "Body", T.BLUE)))
+		_box.add_child(T.wrap(T.label(Data.mission_risk(Settings.value("difficulty")), "Body", T.TEXT)))
 	for part in [
 		["TACTILE", "Toucher : déplacer l'équipe, viser, choisir.\nGlisser : déplacer la caméra.\nPincer à deux doigts : zoomer et tourner."],
 		["SOURIS", "Clic : déplacer, viser, choisir.\nGlisser : caméra · clic droit glissé : tourner · molette : zoom."],

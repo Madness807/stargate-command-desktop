@@ -207,6 +207,8 @@ func _test_menu() -> void:
 	var previous: String = Expedition.difficulty
 	menu._cycle_difficulty()
 	check(Expedition.difficulty != previous, "difficulté modifiable dans le menu RTS")
+	menu._show_page("rules")
+	check("après la mise en service du commandement" in menu._difficulty.text and "arrêté pendant" in menu._difficulty.text, "annonce exacte du départ du compte à rebours")
 	menu._show_page("briefing")
 	check(menu._page == "briefing" and menu._content.get_child_count() > 3, "rapport de reconnaissance consultable")
 	var configured := Sim.new(Expedition.options())
@@ -226,6 +228,7 @@ func _test_menu() -> void:
 
 func _test_view() -> void:
 	var view := Outpost.new()
+	view.persistence_enabled = false
 	view.sim = Sim.new()
 	add_child(view)
 	view.set_process(false)
@@ -256,6 +259,7 @@ func _test_compact_controls() -> void:
 	viewport.size = Vector2i(1067, 600)
 	add_child(viewport)
 	var view := Outpost.new()
+	view.persistence_enabled = false
 	view.sim = Sim.new({"established": true})
 	viewport.add_child(view)
 	view.set_process(false)

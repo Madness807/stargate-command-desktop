@@ -120,7 +120,7 @@ func _test_save() -> void:
 
 
 func _test_difficulty() -> void:
-	const CombatScript = preload("res://scripts/combat.gd")
+	const CombatScript = preload("res://scripts/combat_realtime.gd")
 	var c := CombatScript.new()
 	c.tier = 2
 	Settings.set_value("difficulty", "normal")

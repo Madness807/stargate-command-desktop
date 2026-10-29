@@ -26,6 +26,7 @@ func _ready() -> void:
 	menu.queue_free()
 	await get_tree().process_frame
 	var terrain = load("res://scripts/outpost.gd").new()
+	terrain.persistence_enabled = false
 	add_child(terrain)
 	await get_tree().create_timer(2).timeout
 	terrain._menu()

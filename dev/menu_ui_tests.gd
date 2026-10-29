@@ -144,6 +144,7 @@ func _ready() -> void:
 		briefing.queue_free()
 		await settle()
 		var view = load("res://scripts/outpost.gd").new()
+		view.persistence_enabled = false
 		view.sim = load("res://scripts/outpost_sim.gd").new({"established": true})
 		add_child(view)
 		view.set_process(false)

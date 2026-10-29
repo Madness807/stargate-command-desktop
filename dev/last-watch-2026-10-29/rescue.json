@@ -1,0 +1,634 @@
+{
+	"checks": 14,
+	"difficulty": "normal",
+	"events": [
+		{
+			"text": "Première équipe arrivée. Reconnaissez la clairière balisée et sécurisez le périmètre avant d'appeler le SGC.",
+			"time": 7.6
+		},
+		{
+			"text": "SGC : déploiement autorisé. Deux ingénieurs et le matériel franchiront la porte dans 12 secondes.",
+			"time": 13.2
+		},
+		{
+			"text": "SGC : personnel et matériel arrivés. Gardez les ingénieurs près du chantier.",
+			"time": 26.1
+		},
+		{
+			"text": "Les ingénieurs installent le commandement. Protégez le chantier.",
+			"time": 26.1
+		},
+		{
+			"text": "Commandement opérationnel.",
+			"time": 39.4
+		},
+		{
+			"text": "Avant-poste opérationnel. Construction, ravitaillement et renforts militaires disponibles.",
+			"time": 39.4
+		},
+		{
+			"text": "Hammond : opération Dernière Veille engagée. Établissez un laboratoire, exploitez le gisement et escortez un scientifique vers les ruines à l'est. Une balise SG-11 émet au nord-ouest : sauvetage facultatif, renseignements radio à récupérer.",
+			"time": 39.4
+		},
+		{
+			"text": "Construction : Générateur.",
+			"time": 39.6
+		},
+		{
+			"text": "SGC : trois soldats en préparation. Arrivée dans 18 secondes.",
+			"time": 39.6
+		},
+		{
+			"text": "Générateur opérationnel.",
+			"time": 50.0
+		},
+		{
+			"text": "Construction : Tourelle.",
+			"time": 50.6
+		},
+		{
+			"text": "SGC : renforts arrivés par la porte.",
+			"time": 59.3
+		},
+		{
+			"text": "Tourelle opérationnel.",
+			"time": 61.3
+		},
+		{
+			"text": "Construction : Infirmerie.",
+			"time": 61.6
+		},
+		{
+			"text": "Infirmerie opérationnel.",
+			"time": 74.1
+		},
+		{
+			"text": "Construction : Laboratoire.",
+			"time": 74.8
+		},
+		{
+			"text": "SGC : Médecin en préparation · 10 secondes.",
+			"time": 84.7
+		},
+		{
+			"text": "Laboratoire opérationnel.",
+			"time": 88.5
+		},
+		{
+			"text": "Construction : Générateur.",
+			"time": 91.3
+		},
+		{
+			"text": "SGC : renforts arrivés par la porte.",
+			"time": 94.8
+		},
+		{
+			"text": "Générateur opérationnel.",
+			"time": 102.4
+		},
+		{
+			"text": "Construction : Tourelle.",
+			"time": 106.7
+		},
+		{
+			"text": "Renseignement : AXE NORD → le générateur. Entrée dans le secteur dans 30 secondes. Interceptez la colonne ou défendez sa cible.",
+			"time": 109.5
+		},
+		{
+			"text": "Tourelle opérationnel.",
+			"time": 119.6
+		},
+		{
+			"text": "Gisement repéré. Éliminez les gardes puis placez un extracteur.",
+			"time": 119.6
+		},
+		{
+			"text": "Construction : Tourelle.",
+			"time": 123.2
+		},
+		{
+			"text": "Tourelle opérationnel.",
+			"time": 133.6
+		},
+		{
+			"text": "SG-11 retrouvée : deux survivants rejoignent votre commandement. Escortez-les au QG ; leurs relevés radio permettront d'anticiper les colonnes 50 secondes à l'avance.",
+			"time": 136.6
+		},
+		{
+			"text": "Colonne ennemie engagée : AXE NORD → le générateur · 3 Jaffas.",
+			"time": 139.5
+		},
+		{
+			"text": "SG-11 au commandement. Fréquences ennemies identifiées : alerte raid portée de 30 à 50 secondes. Protégez les survivants jusqu'au retour sur Terre.",
+			"time": 145.3
+		},
+		{
+			"text": "Construction : Extracteur.",
+			"time": 146.3
+		},
+		{
+			"text": "Archives localisées. Un scientifique escorté et un laboratoire alimenté permettront leur étude.",
+			"time": 154.1
+		},
+		{
+			"text": "Extracteur opérationnel.",
+			"time": 159.7
+		},
+		{
+			"text": "SGC : trois soldats en préparation. Arrivée dans 18 secondes.",
+			"time": 181.5
+		},
+		{
+			"text": "SGC : renforts arrivés par la porte.",
+			"time": 201.2
+		},
+		{
+			"text": "Renseignement : AXE EST → l'extracteur. Entrée dans le secteur dans 50 secondes. Interceptez la colonne ou défendez sa cible.",
+			"time": 204.6
+		},
+		{
+			"text": "Jackson : les archives décrivent deux relais récupérés par les Goa'ulds. Coupez-les avec nos générateurs de terrain. Nord : réduit les renforts ; est : retarde les colonnes et affaiblit l'armement du camp.",
+			"time": 222.0
+		},
+		{
+			"text": "Générateur de terrain déployé sur le relais nord. Protégez l'ingénieur pendant 45 secondes.",
+			"time": 231.0
+		},
+		{
+			"text": "Camp goa'uld localisé. Sa position est enregistrée sur la carte.",
+			"time": 232.0
+		},
+		{
+			"text": "Colonne ennemie engagée : AXE EST → l'extracteur · 3 Jaffas.",
+			"time": 254.6
+		},
+		{
+			"text": "SGC : Scientifique en préparation · 10 secondes.",
+			"time": 261.8
+		},
+		{
+			"text": "Extracteur réparé · 22 ravitaillements.",
+			"time": 268.4
+		},
+		{
+			"text": "SGC : renforts arrivés par la porte.",
+			"time": 271.9
+		},
+		{
+			"text": "Extracteur réparé · 24 ravitaillements.",
+			"time": 272.8
+		},
+		{
+			"text": "Relais nord neutralisé. Les colonnes perdent un renfort.",
+			"time": 276.0
+		},
+		{
+			"text": "Extracteur réparé · 22 ravitaillements.",
+			"time": 277.2
+		},
+		{
+			"text": "Extracteur réparé · 22 ravitaillements.",
+			"time": 281.6
+		},
+		{
+			"text": "Générateur de terrain déployé sur le relais est. Protégez l'ingénieur pendant 45 secondes.",
+			"time": 282.7
+		},
+		{
+			"text": "Extracteur réparé · 22 ravitaillements.",
+			"time": 286.0
+		},
+		{
+			"text": "Extracteur réparé · 24 ravitaillements.",
+			"time": 290.4
+		},
+		{
+			"text": "Extracteur réparé · 24 ravitaillements.",
+			"time": 294.8
+		},
+		{
+			"text": "Extracteur réparé · 22 ravitaillements.",
+			"time": 299.2
+		},
+		{
+			"text": "Extracteur réparé · 24 ravitaillements.",
+			"time": 303.6
+		},
+		{
+			"text": "Extracteur réparé · 22 ravitaillements.",
+			"time": 308.0
+		},
+		{
+			"text": "Extracteur réparé · 22 ravitaillements.",
+			"time": 312.4
+		},
+		{
+			"text": "Extracteur réparé · 22 ravitaillements.",
+			"time": 316.8
+		},
+		{
+			"text": "Renseignement : AXE NORD → le commandement. Entrée dans le secteur dans 50 secondes. Interceptez la colonne ou défendez sa cible.",
+			"time": 319.7
+		},
+		{
+			"text": "Extracteur réparé · 24 ravitaillements.",
+			"time": 321.2
+		},
+		{
+			"text": "Extracteur réparé · 24 ravitaillements.",
+			"time": 325.6
+		},
+		{
+			"text": "Relais est neutralisé. Prochaine colonne retardée de 45 s ; armement du camp affaibli de 40 %.",
+			"time": 327.7
+		},
+		{
+			"text": "Carter : bouclier du camp coupé. Lancez l'assaut ; gardez une défense et un scientifique en vie pour récupérer les archives.",
+			"time": 327.7
+		},
+		{
+			"text": "Extracteur réparé · 22 ravitaillements.",
+			"time": 330.0
+		},
+		{
+			"text": "Extracteur réparé · 24 ravitaillements.",
+			"time": 334.4
+		},
+		{
+			"text": "Extracteur réparé · 22 ravitaillements.",
+			"time": 338.8
+		},
+		{
+			"text": "Bâtiment détruit : camp goa'uld.",
+			"time": 340.0
+		},
+		{
+			"text": "Camp neutralisé. Les réserves du secteur convergent : deux dernières colonnes. Ramenez un scientifique aux ruines et protégez la transmission pendant 90 secondes.",
+			"time": 340.0
+		},
+		{
+			"text": "Renseignement : AXE NORD → le commandement. Entrée dans le secteur dans 45 secondes. Interceptez la colonne ou défendez sa cible.",
+			"time": 340.1
+		},
+		{
+			"text": "Extracteur réparé · 34 ravitaillements.",
+			"time": 345.4
+		},
+		{
+			"text": "Colonne ennemie engagée : AXE NORD → le commandement · 3 Jaffas.",
+			"time": 385.0
+		},
+		{
+			"text": "Extracteur réparé · 21 ravitaillements.",
+			"time": 398.2
+		},
+		{
+			"text": "Archives copiées sur les terminaux de terrain. Escortez un scientifique jusqu'au commandement pour valider les données et préparer le retour.",
+			"time": 441.0
+		},
+		{
+			"text": "Données validées. Rassemblez le personnel près de la porte puis ouvrez une liaison sortante vers le SGC. Les installations resteront sur place.",
+			"time": 447.8
+		},
+		{
+			"text": "Renseignement : AXE EST → l'équipe scientifique. Entrée dans le secteur dans 50 secondes. Interceptez la colonne ou défendez sa cible.",
+			"time": 450.1
+		},
+		{
+			"text": "SGC : composition vers la Terre engagée. Tous les survivants rejoignent la porte. Aucun renfort entrant pendant le rapatriement.",
+			"time": 452.1
+		},
+		{
+			"text": "DERNIÈRE VEILLE ACCOMPLIE · Archives récupérées, bouclier neutralisé et 15 personnes rapatriées au SGC.",
+			"time": 460.7
+		}
+	],
+	"failures": 0,
+	"operation": {
+		"backup": 0.0,
+		"base_time": 421.400000000027,
+		"blocked": "",
+		"charged": [
+			true,
+			true
+		],
+		"evacuated": 15,
+		"final_raids": 1,
+		"history": [
+			{
+				"text": "Hammond : opération Dernière Veille engagée. Établissez un laboratoire, exploitez le gisement et escortez un scientifique vers les ruines à l'est. Une balise SG-11 émet au nord-ouest : sauvetage facultatif, renseignements radio à récupérer.",
+				"time": 39.4000000000003
+			},
+			{
+				"text": "Renseignement : AXE NORD → le générateur. Entrée dans le secteur dans 30 secondes. Interceptez la colonne ou défendez sa cible.",
+				"time": 109.499999999998
+			},
+			{
+				"text": "SG-11 retrouvée : deux survivants rejoignent votre commandement. Escortez-les au QG ; leurs relevés radio permettront d'anticiper les colonnes 50 secondes à l'avance.",
+				"time": 136.599999999997
+			},
+			{
+				"text": "Colonne ennemie engagée : AXE NORD → le générateur · 3 Jaffas.",
+				"time": 139.499999999996
+			},
+			{
+				"text": "SG-11 au commandement. Fréquences ennemies identifiées : alerte raid portée de 30 à 50 secondes. Protégez les survivants jusqu'au retour sur Terre.",
+				"time": 145.299999999996
+			},
+			{
+				"text": "Renseignement : AXE EST → l'extracteur. Entrée dans le secteur dans 50 secondes. Interceptez la colonne ou défendez sa cible.",
+				"time": 204.599999999993
+			},
+			{
+				"text": "Jackson : les archives décrivent deux relais récupérés par les Goa'ulds. Coupez-les avec nos générateurs de terrain. Nord : réduit les renforts ; est : retarde les colonnes et affaiblit l'armement du camp.",
+				"time": 221.999999999992
+			},
+			{
+				"text": "Générateur de terrain déployé sur le relais nord. Protégez l'ingénieur pendant 45 secondes.",
+				"time": 230.999999999991
+			},
+			{
+				"text": "Colonne ennemie engagée : AXE EST → l'extracteur · 3 Jaffas.",
+				"time": 254.59999999999
+			},
+			{
+				"text": "Relais nord neutralisé. Les colonnes perdent un renfort.",
+				"time": 275.999999999994
+			},
+			{
+				"text": "Générateur de terrain déployé sur le relais est. Protégez l'ingénieur pendant 45 secondes.",
+				"time": 282.699999999996
+			},
+			{
+				"text": "Renseignement : AXE NORD → le commandement. Entrée dans le secteur dans 50 secondes. Interceptez la colonne ou défendez sa cible.",
+				"time": 319.700000000004
+			},
+			{
+				"text": "Relais est neutralisé. Prochaine colonne retardée de 45 s ; armement du camp affaibli de 40 %.",
+				"time": 327.700000000006
+			},
+			{
+				"text": "Carter : bouclier du camp coupé. Lancez l'assaut ; gardez une défense et un scientifique en vie pour récupérer les archives.",
+				"time": 327.700000000006
+			},
+			{
+				"text": "Camp neutralisé. Les réserves du secteur convergent : deux dernières colonnes. Ramenez un scientifique aux ruines et protégez la transmission pendant 90 secondes.",
+				"time": 340.000000000009
+			},
+			{
+				"text": "Renseignement : AXE NORD → le commandement. Entrée dans le secteur dans 45 secondes. Interceptez la colonne ou défendez sa cible.",
+				"time": 340.100000000009
+			},
+			{
+				"text": "Colonne ennemie engagée : AXE NORD → le commandement · 3 Jaffas.",
+				"time": 385.000000000019
+			},
+			{
+				"text": "Archives copiées sur les terminaux de terrain. Escortez un scientifique jusqu'au commandement pour valider les données et préparer le retour.",
+				"time": 441.000000000032
+			},
+			{
+				"text": "Données validées. Rassemblez le personnel près de la porte puis ouvrez une liaison sortante vers le SGC. Les installations resteront sur place.",
+				"time": 447.800000000033
+			},
+			{
+				"text": "Renseignement : AXE EST → l'équipe scientifique. Entrée dans le secteur dans 50 secondes. Interceptez la colonne ou défendez sa cible.",
+				"time": 450.100000000034
+			},
+			{
+				"text": "SGC : composition vers la Terre engagée. Tous les survivants rejoignent la porte. Aucun renfort entrant pendant le rapatriement.",
+				"time": 452.100000000034
+			},
+			{
+				"text": "DERNIÈRE VEILLE ACCOMPLIE · Archives récupérées, bouclier neutralisé et 15 personnes rapatriées au SGC.",
+				"time": 460.700000000036
+			}
+		],
+		"id": "last_watch",
+		"initial_evac": 15,
+		"outbound_clock": 8.59999999999999,
+		"raid_number": 3,
+		"raid_point": "(30.0, 22.0)",
+		"raid_target": 44,
+		"relays": [
+			45.0,
+			45.0
+		],
+		"rescue_lost": false,
+		"rescue_released": true,
+		"rescue_returned": true,
+		"rescued_out": 1,
+		"scientists_out": 1,
+		"soldiers_out": 10,
+		"stage": "complete",
+		"study": 60.0,
+		"transfer": 90.0,
+		"warning": "AXE EST → l'équipe scientifique"
+	},
+	"remaining": [
+		{
+			"build": 0.0,
+			"cooldown": 0.0,
+			"goal": "(8.0, 18.0)",
+			"hp": 600.0,
+			"id": 20,
+			"kind": "hq",
+			"max_hp": 600.0,
+			"moving": false,
+			"path": [],
+			"pos": "(8.0, 18.0)",
+			"side": "sgc",
+			"target": -1
+		},
+		{
+			"build": 0.0,
+			"cooldown": 0.0,
+			"goal": "(5.0, 15.0)",
+			"hp": 220.0,
+			"id": 21,
+			"kind": "generator",
+			"max_hp": 220.0,
+			"moving": false,
+			"path": [],
+			"pos": "(5.0, 15.0)",
+			"side": "sgc",
+			"target": -1
+		},
+		{
+			"build": 0.0,
+			"cooldown": 0.0,
+			"goal": "(11.0, 16.0)",
+			"hp": 246.0,
+			"id": 22,
+			"kind": "turret",
+			"max_hp": 260.0,
+			"moving": false,
+			"path": [],
+			"pos": "(11.0, 16.0)",
+			"side": "sgc",
+			"target": -1
+		},
+		{
+			"build": 0.0,
+			"cooldown": 0.0,
+			"goal": "(5.0, 22.0)",
+			"hp": 240.0,
+			"id": 26,
+			"kind": "infirmary",
+			"max_hp": 240.0,
+			"moving": false,
+			"path": [],
+			"pos": "(5.0, 22.0)",
+			"side": "sgc",
+			"target": -1
+		},
+		{
+			"build": 0.0,
+			"cooldown": 0.0,
+			"goal": "(12.0, 21.0)",
+			"hp": 240.0,
+			"id": 27,
+			"kind": "lab",
+			"max_hp": 240.0,
+			"moving": false,
+			"path": [],
+			"pos": "(12.0, 21.0)",
+			"side": "sgc",
+			"target": -1
+		},
+		{
+			"build": 0.0,
+			"cooldown": 0.0,
+			"goal": "(2.0, 15.0)",
+			"hp": 220.0,
+			"id": 28,
+			"kind": "generator",
+			"max_hp": 220.0,
+			"moving": false,
+			"path": [],
+			"pos": "(2.0, 15.0)",
+			"side": "sgc",
+			"target": -1
+		},
+		{
+			"build": 0.0,
+			"cooldown": 0.0,
+			"goal": "(11.0, 12.0)",
+			"hp": 232.0,
+			"id": 30,
+			"kind": "turret",
+			"max_hp": 260.0,
+			"moving": false,
+			"path": [],
+			"pos": "(11.0, 12.0)",
+			"side": "sgc",
+			"target": -1
+		},
+		{
+			"build": 0.0,
+			"cooldown": 0.0,
+			"goal": "(14.0, 16.0)",
+			"hp": 260.0,
+			"id": 31,
+			"kind": "turret",
+			"max_hp": 260.0,
+			"moving": false,
+			"path": [],
+			"pos": "(14.0, 16.0)",
+			"side": "sgc",
+			"target": -1
+		},
+		{
+			"build": 0.0,
+			"cooldown": 0.0,
+			"goal": "(16.0, 12.0)",
+			"hp": 260.0,
+			"id": 37,
+			"kind": "mine",
+			"max_hp": 260.0,
+			"moving": false,
+			"path": [],
+			"pos": "(16.0, 12.0)",
+			"side": "sgc",
+			"target": -1
+		}
+	],
+	"rescue_route": true,
+	"result": "victory",
+	"resumed": true,
+	"seconds": 460.7,
+	"transitions": [
+		{
+			"soldiers": 0,
+			"stage": "arrival/archives",
+			"supplies": 320,
+			"time": 0.1
+		},
+		{
+			"soldiers": 4,
+			"stage": "recon/archives",
+			"supplies": 320,
+			"time": 7.6
+		},
+		{
+			"soldiers": 4,
+			"stage": "deployment/archives",
+			"supplies": 320,
+			"time": 13.3
+		},
+		{
+			"soldiers": 4,
+			"stage": "establish/archives",
+			"supplies": 320,
+			"time": 26.1
+		},
+		{
+			"soldiers": 4,
+			"stage": "base/archives",
+			"supplies": 320,
+			"time": 39.4
+		},
+		{
+			"soldiers": 10,
+			"stage": "base/relays",
+			"supplies": 188,
+			"time": 222.0
+		},
+		{
+			"soldiers": 10,
+			"stage": "base/assault",
+			"supplies": 168,
+			"time": 327.7
+		},
+		{
+			"soldiers": 10,
+			"stage": "base/transfer",
+			"supplies": 137,
+			"time": 340.0
+		},
+		{
+			"soldiers": 10,
+			"stage": "base/return",
+			"supplies": 463,
+			"time": 441.0
+		},
+		{
+			"soldiers": 10,
+			"stage": "base/ready",
+			"supplies": 491,
+			"time": 447.8
+		},
+		{
+			"soldiers": 10,
+			"stage": "base/evacuation",
+			"supplies": 507,
+			"time": 452.2
+		},
+		{
+			"soldiers": 0,
+			"stage": "base/complete",
+			"supplies": 543,
+			"time": 460.7
+		}
+	]
+}

@@ -21,6 +21,7 @@ var _summary: Label
 var _difficulty: Label
 
 func _ready() -> void:
+	get_tree().auto_accept_quit = false
 	add_child(Harness.new(self))
 	theme = T.make()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -46,7 +47,7 @@ func _ready() -> void:
 	top.add_child(id_label)
 	top.add_child(T.button("Retour", _back, "Ghost"))
 	body.add_child(T.label("P3X-742", "Heading"))
-	body.add_child(T.wrap(T.label("OPÉRATION IMPLANTATION · Vallée boisée", "Body", T.DIM)))
+	body.add_child(T.wrap(T.label("DERNIÈRE VEILLE · Opération originale du SGC", "Body", T.DIM)))
 	var nav := HBoxContainer.new()
 	body.add_child(nav)
 	for entry in [["briefing", "01  Briefing"], ["forces", "02  Équipe"], ["rules", "03  Engagement"]]:
@@ -72,11 +73,19 @@ func _ready() -> void:
 	body.add_child(foot)
 	foot.add_child(T.button("Options", _options, "Ghost"))
 	foot.add_child(T.button("Commandes", _controls, "Ghost"))
-	var launch := T.button("Déployer l'équipe", _launch, "Accent")
+	var launch := T.button("Nouvelle expédition" if Expedition.has_save() else "Déployer l'équipe", _launch, "Ghost" if Expedition.has_save() else "Accent")
 	launch.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	foot.add_child(launch)
-	body.add_child(T.wrap(T.label("Partie non sauvegardée · prévoyez de terminer l'opération en une session.", "Body", T.DIM)))
+	if Expedition.has_save():
+		var resume := T.button("Reprendre", func():
+			Expedition.resume_pending = true
+			get_tree().change_scene_to_file.call_deferred("res://outpost.tscn"), "Accent", "Reprendre la base et les unités sauvegardées")
+		resume.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		foot.add_child(resume)
+	body.add_child(T.wrap(T.label("Sauvegarde automatique · reprise en pause depuis cet écran.", "Body", T.DIM)))
 	_show_page("briefing")
+	if not Expedition.last_error.is_empty():
+		_content.add_child(T.wrap(T.label(Expedition.last_error, "Body", T.RED)))
 
 
 func _show_page(page: String) -> void:
@@ -92,9 +101,9 @@ func _show_page(page: String) -> void:
 	match page:
 		"briefing":
 			_content.add_child(T.label("MISSION", "Section"))
-			_content.add_child(T.wrap(T.label("Établissez un avant-poste au-delà de la porte.", "Heading")))
-			_content.add_child(T.wrap(T.label("Le MALP confirme une atmosphère respirable et une clairière à l'est de la porte. Des signatures goa'uld ont été détectées. Leurs positions restent inconnues.", "Body")))
-			for entry in [["01  RECONNAÎTRE", "Sécuriser la clairière avec votre équipe SG."], ["02  ÉTABLIR", "Appeler les ingénieurs et protéger la construction du commandement."], ["03  NEUTRALISER", "Exploiter le naquadah, renforcer la base et détruire le camp ennemi."]]:
+			_content.add_child(T.wrap(T.label("Récupérez les archives. Ramenez votre personnel.", "Heading")))
+			_content.add_child(T.wrap(T.label("Pendant la saison 3, après l’acquisition des générateurs d’Orban, le SGC enquête sur une installation ancienne occupée par les Goa’ulds. Le MALP confirme une clairière près de la porte. Établissez une tête de pont, déchiffrez les archives et coupez le bouclier du camp. La mission se termine au retour du personnel au SGC, pas à la destruction du camp.", "Body")))
+			for entry in [["01–02  TÊTE DE PONT", "Reconnaître la clairière, appeler les ingénieurs et protéger l'installation du commandement. Les modules sont assemblés sur place ; les renforts viennent du SGC."], ["03  ARCHIVES", "Construire un laboratoire alimenté et escorter un scientifique aux ruines. L'analyse exige 60 secondes de travail en zone sécurisée."], ["04  RELAIS", "Exploiter le gisement puis déployer deux générateurs de terrain : 40 N et 45 secondes d'intervention par relais. Nord : réduit les renforts ennemis ; est : retarde une colonne et affaiblit le camp. Choisir l’ordre ou diviser les forces."], ["05–06  ASSAUT ET TRANSMISSION", "Neutraliser le camp une fois son bouclier coupé. Protéger ensuite une transmission de 90 secondes aux ruines, face aux réserves ennemies."], ["07  RAPATRIEMENT", "Rapporter les données au commandement, rassembler les survivants et ouvrir vers la Terre. Une connexion sortante empêche l'arrivée des renforts."], ["CHOIX ET RISQUES", "Le naquadah conditionné alimente les dispositifs : relais 40 N chacun, secours électrique 25 N / 45 s, régulation 80 N. Régulation : +4 énergie, interventions 25 % plus rapides. Le détachement est limité à 12 militaires, hors spécialistes. Un scientifique peut être remplacé avant le départ ; pendant le rapatriement, au moins un scientifique et un militaire doivent rentrer. Le commandement doit tenir jusqu'au dernier passage."], ["DÉTOUR FACULTATIF · SG-11", "Une balise émet au nord-ouest. Sécurisez le refuge puis escortez les deux survivants au commandement. Leurs relevés radio portent l’alerte raid à 50 secondes. Ce détour mobilise une escorte, mais fournit aussi un scientifique et un ingénieur."], ["RYTHME", "Mission à plusieurs phases, sauvegarde automatique et reprise en pause. Les travaux s'interrompent si le site est contesté, sans effacer leur progression. Aucun chronomètre global : préparez vos opérations entre les raids."]]:
 				_content.add_child(HSeparator.new())
 				_content.add_child(T.label(entry[0], "Caption", T.BLUE))
 				_content.add_child(T.wrap(T.label(entry[1], "Body")))
@@ -145,7 +154,8 @@ func _refresh() -> void:
 	var labels := {"easy": "Recrue", "normal": "Officier", "hard": "Vétéran"}
 	_summary.text = "%s  /  %s  /  %d ravitaillements" % [d.name, labels[Expedition.difficulty], d.supplies]
 	if is_instance_valid(_difficulty):
-		_difficulty.text = {"easy": "Premier raid après 130 secondes. Pour apprendre à établir et défendre la base.", "normal": "Premier raid après 100 secondes. Préparez vos défenses pendant le déploiement.", "hard": "Premier raid après 80 secondes. La reconnaissance et la construction doivent être rapides."}[Expedition.difficulty]
+		_difficulty.text = {"easy": "Premier raid 130 secondes après la mise en service du commandement.", "normal": "Premier raid 100 secondes après la mise en service du commandement.", "hard": "Premier raid 80 secondes après la mise en service du commandement."}[Expedition.difficulty]
+		_difficulty.text += " Le compte à rebours reste arrêté pendant la reconnaissance et l'installation. Les colonnes suivantes annoncent leur axe et leur cible 30 secondes avant le contact."
 	for key in difficulty_buttons:
 		difficulty_buttons[key].set_pressed_no_signal(key == Expedition.difficulty)
 	for key in profile_buttons:
@@ -155,6 +165,18 @@ func _refresh() -> void:
 
 
 func _launch() -> void:
+	if Expedition.has_save():
+		_show_page("replace")
+		_content.add_child(T.wrap(T.label("Remplacer l'expédition sauvegardée ? La base et les unités de l'opération précédente seront abandonnées.", "Body")))
+		_content.add_child(T.button("Remplacer et déployer", _deploy_new, "Danger"))
+		_content.add_child(T.button("Conserver ma sauvegarde", func(): _show_page("briefing"), "Ghost"))
+		return
+	_deploy_new()
+
+func _deploy_new() -> void:
+	if not Expedition.clear_session():
+		_content.add_child(T.wrap(T.label("Impossible de remplacer la sauvegarde. Elle a été conservée.", "Body", T.RED)))
+		return
 	Audio.play("dhd")
 	get_tree().change_scene_to_file.call_deferred("res://outpost.tscn")
 
@@ -188,3 +210,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel") and _sub == null:
 		_back()
 		get_viewport().set_input_as_handled()
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		get_tree().quit()

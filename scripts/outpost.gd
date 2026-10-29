@@ -1,5 +1,5 @@
 extends Node3D
-## Vue et commandes du prototype RTS. Aucun accès à Game : la campagne reste intacte.
+## Vue et commandes de l’expédition RTS. Aucun accès à Game : la campagne reste intacte.
 
 const Sim = preload("res://scripts/outpost_sim.gd")
 const People = preload("res://scripts/people.gd")
@@ -18,6 +18,10 @@ var ancient_console: Node3D
 
 const SettingsMenu = preload("res://scripts/settings_menu.gd")
 
+var operation_buttons := {}
+var operation_alert: Label
+var relay_markers: Array[Node3D] = []
+var mission_progress: ProgressBar
 var sim: Sim
 var cam: Camera3D
 var focus := Vector3(19, 0, 34)
@@ -88,9 +92,23 @@ var _menu_dialog: Control
 var _result_shown := false
 var _undo_squads := {}
 var multi_indicator: Label
+var persistence_enabled := true
+var _save_clock := 0.0
+var _save_notice := ""
 
 
 func _ready() -> void:
+	get_tree().auto_accept_quit = false
+	var restored := {}
+	if sim == null and Expedition.resume_pending:
+		Expedition.resume_pending = false
+		restored = Expedition.load_session()
+		if not restored.is_empty() and restored.has("simulation"):
+			sim = Sim.from_snapshot(restored.simulation)
+		if sim == null:
+			Expedition.last_error = "Sauvegarde d'expédition illisible ou incompatible. Elle a été conservée."
+			get_tree().change_scene_to_file.call_deferred("res://outpost_menu.tscn")
+			return
 	if sim == null:
 		var options: Dictionary = Expedition.options()
 		options["established"] = Cli.has("--rts-established")
@@ -106,6 +124,17 @@ func _ready() -> void:
 	_notice("SGC : composition de P3X-742. Première équipe autorisée à franchir la porte. Aucun avant-poste n'est encore installé." if sim.phase == "arrival" else "Avant-poste opérationnel. Le SGC fournit 4 ravitaillements par seconde.")
 	_sync_visuals()
 	_update_ui()
+	if not restored.is_empty():
+		focus = restored.view.focus
+		distance = restored.view.distance
+		selected = restored.view.selected.duplicate()
+		logs.assign(restored.view.logs)
+		_show_command_tab(restored.view.tab)
+		_camera()
+		paused = false
+		_menu()
+	else:
+		save_checkpoint()
 
 
 func _world(p: Vector2, y: float = 0.0) -> Vector3:
@@ -228,6 +257,34 @@ func _build_world() -> void:
 		ancient_console = null
 	landmarks.append({"node": ruins, "pos": Sim.RUINS})
 	_label3d(ruins, "RUINES ANCIENNES", Vector3.UP * 4.6, T.AMBER)
+	if not sim.operation.is_empty():
+		for i in 2:
+			var relay := Node3D.new()
+			relay.position = _world(Sim.Operation.RELAYS[i])
+			add_child(relay)
+			var relay_console := AncientConsole.new()
+			if relay_console.build():
+				relay_console.scale = Vector3.ONE * 0.65
+				relay.add_child(relay_console)
+			else:
+				relay_console.free()
+				_mesh(relay, People.box(1.4, 2.0, 1.4), Color("676660"), Vector3(0, 1.0, 0))
+			var field_generator := Assets.make("generator")
+			field_generator.name = "FieldGenerator"
+			field_generator.scale = Vector3.ONE * 0.55
+			field_generator.position = Vector3(2.5, 0, 0)
+			field_generator.visible = false
+			relay.add_child(field_generator)
+			var relay_ring := _mesh(relay, Gate.ring_mesh(2.1, 2.3, 0, -0.04, 32), T.BLUE, Vector3(0, 0.1, 0))
+			relay_ring.rotation.x = -PI / 2
+			var relay_label := _label3d(relay, "RELAIS " + ("NORD" if i == 0 else "EST"), Vector3.UP * 3.3, T.BLUE)
+			relay_label.name = "RelayLabel"
+			relay_markers.append(relay)
+		var refuge := Assets.make("ruins")
+		refuge.position = _world(Sim.Operation.RESCUE)
+		add_child(refuge)
+		_label3d(refuge, "BALISE SG-11 · SURVIVANTS", Vector3.UP * 4.5, T.BLUE)
+		landmarks.append({"node": refuge, "pos": Sim.Operation.RESCUE})
 	cam = Camera3D.new()
 	cam.fov = 50
 	cam.far = 230
@@ -407,9 +464,39 @@ func _build_ui() -> void:
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	left.add_theme_constant_override("separation", 10)
 	left_scroll.add_child(left)
-	left.add_child(T.label("OPÉRATION IMPLANTATION", "Section"))
+	left.add_child(T.label("DERNIÈRE VEILLE" if not sim.operation.is_empty() else "OPÉRATION IMPLANTATION", "Section"))
 	objective = T.wrap(T.label("", "Body"))
 	left.add_child(objective)
+	if not sim.operation.is_empty():
+		mission_progress = T.gauge(0, 100, T.BLUE, 10)
+		left.add_child(mission_progress)
+		left.add_child(T.button("Voir l'objectif", func():
+			focus = _world(Sim.Operation.focus_point(sim) if sim.phase == "base" else Sim.HQ_SITE)
+			_camera(), "Ghost"))
+		operation_alert = T.wrap(T.label("", "Body", T.AMBER))
+		left.add_child(operation_alert)
+		var rescue_button := T.button("Voir la balise SG-11", func():
+			focus = _world(Sim.Operation.RESCUE)
+			_camera(), "Ghost")
+		rescue_button.add_theme_font_size_override("font_size", 20)
+		left.add_child(rescue_button)
+		operation_buttons["rescue_focus"] = rescue_button
+		for entry in [["relay_0", "Relais nord · 40 N"], ["relay_1", "Relais est · 40 N"], ["backup", "Secours 45 s · 25 N"], ["evacuate", "Ouvrir vers le SGC"]]:
+			var action: String = entry[0]
+			var button := T.button(entry[1], func():
+				if not paused:
+					sim.operation_action(action)
+					_update_ui(), "Ghost")
+			button.add_theme_font_size_override("font_size", 20)
+			left.add_child(button)
+			operation_buttons[action] = button
+		for i in 2:
+			var index: int = i
+			var focus_button := T.button("Voir le relais " + ("nord" if i == 0 else "est"), func():
+				focus = _world(Sim.Operation.RELAYS[index])
+				_camera(), "Ghost")
+			left.add_child(focus_button)
+			operation_buttons["focus_" + str(i)] = focus_button
 	left.add_child(T.label("TRANSMISSIONS", "Section"))
 	log_label = T.wrap(T.label("", "Body"))
 	log_label.add_theme_font_size_override("font_size", 19)
@@ -529,7 +616,7 @@ func _build_ui() -> void:
 	phase_commands.add_child(deployment_button)
 	reinforcements = T.button("3 soldats · 85 R", func(): sim.reinforce())
 	sgc_page.add_child(reinforcements)
-	research_button = T.button("Munitions +40 % · 30 N", func(): sim.research())
+	research_button = T.button(sim.research_label(), func(): sim.research())
 	research_button.add_theme_font_size_override("font_size", 20)
 	command_pages.base.add_child(research_button)
 	sgc_page.add_child(T.label("SPÉCIALISTES", "Section"))
@@ -718,7 +805,7 @@ func _update_unit_panel() -> void:
 		"soldier": "Soldat · combat et reconnaissance",
 		"engineer": "Ingénieur · répare à 3 cases : 5 PV/s pour 1 R/s, à l'arrêt",
 		"medic": "Médecin · soigne à 3 cases : 6 PV/s, à l'arrêt",
-		"scientist": "Scientifique · étudie les ruines en 12 s, à l'arrêt",
+		"scientist": "Scientifique · analyse et transmission aux ruines, à l'arrêt" if not sim.operation.is_empty() else "Scientifique · étudie les ruines en 12 s, à l'arrêt",
 	}
 	var counts := {}
 	for id in selected:
@@ -728,7 +815,7 @@ func _update_unit_panel() -> void:
 	for kind in counts:
 		lines.append("%d × %s" % [counts[kind], roles[kind]])
 	if counts.has("scientist"):
-		lines.append("Étude terminée ✓" if sim.ruins_studied else "Étude des Anciens : %d / 12 s" % sim.ruins_study)
+		lines.append("Étude terminée ✓" if sim.ruins_studied else "Étude des Anciens : %d / %d s" % [sim.ruins_study, Sim.Operation.STUDY_TIME if not sim.operation.is_empty() else 12])
 	unit_panel.visible = not lines.is_empty()
 	unit_details.text = "\n\n".join(lines)
 	multi_indicator.text = "SÉLECTION MULTIPLE ACTIVE · touchez une unité pour l'ajouter / la retirer" if multi_select else ""
@@ -753,15 +840,19 @@ func _update_building_panel() -> void:
 	var descriptions := {
 		"hq": "Liaison SGC : +4 ravitaillements/s. Permet l'arrivée des renforts par la porte.",
 		"generator": "Production automatique : +8 énergie. Alimente les installations de la base.",
-		"turret": "Défense automatique : ouvre le feu sur les ennemis à portée. Consomme 2 énergie.",
+		"turret": "Tir automatique · portée 11 m · cadence 1,3 s. Requiert 2 énergie et une ligne de tir dégagée. Sélectionnez la tourelle pour voir sa portée.",
 		"infirmary": "Soins automatiques : +5 PV/s aux soldats et ingénieurs à moins de 5 cases. Consomme 2 énergie.",
-		"lab": "Recherche : améliore de 40 % les dégâts des soldats et tourelles. Consomme 3 énergie.",
-		"mine": "Extraction automatique : +2 naquadah/s. Consomme 3 énergie.",
+		"lab": "Analyse des archives. Régulation : +4 énergie et relais 25 % plus rapides. Consomme 3 énergie." if not sim.operation.is_empty() else "Recherche : améliore de 40 % les dégâts des soldats et tourelles. Consomme 3 énergie.",
+		"mine": "Extraction et conditionnement : +1 naquadah/s. Consomme 3 énergie." if not sim.operation.is_empty() else "Extraction automatique : +2 naquadah/s. Consomme 3 énergie.",
 	}
 	var operational: bool = e.build <= 0 and (Sim.BUILDINGS[e.kind].power <= 0 or sim.powered())
 	var state := "OPÉRATIONNEL" if operational else "ÉNERGIE INSUFFISANTE"
 	if e.build > 0:
 		state = "CONSTRUCTION · %d %% · %ds" % [100 * (1.0 - e.build / Sim.BUILDINGS[e.kind].time), ceili(e.build)]
+		if not sim.operation.is_empty() and not Sim.Operation.near(sim, "engineer", e.pos, 3):
+			state += "\nEN ATTENTE · ingénieur à l’arrêt à moins de 3 cases"
+	if e.kind == "turret" and e.build <= 0:
+		state = sim.turret_status(e).text
 	building_title.text = Sim.BUILDINGS[e.kind].name.to_upper()
 	building_details.text = "%d / %d PV\n%s\n\n%s" % [e.hp, e.max_hp, state, descriptions[e.kind]]
 	var blocked := paused or sim.result != "" or not operational
@@ -770,10 +861,10 @@ func _update_building_panel() -> void:
 	match e.kind:
 		"hq":
 			building_action.text = "Convoi en cours…" if sim.gate_busy() else "3 soldats · 85 R"
-			building_action.disabled = blocked or sim.gate_busy() or sim.supplies < 85 or sim.count("soldier") > 17 or sim.phase != "base"
+			building_action.disabled = blocked or sim.reinforce_error() != ""
 		"lab":
-			building_action.text = "Munitions améliorées ✓" if sim.researched else "Munitions +40 % · 30 N"
-			building_action.disabled = blocked or sim.researched or sim.naquadah < 30
+			building_action.text = sim.research_label()
+			building_action.disabled = blocked or sim.researched or sim.naquadah < (80 if not sim.operation.is_empty() else 30)
 		"infirmary":
 			building_action.text = "Rappeler les blessés"
 			building_action.disabled = blocked or _wounded_units().is_empty()
@@ -854,6 +945,7 @@ func _toggle_pause() -> void:
 
 
 func _menu() -> void:
+	save_checkpoint()
 	if is_instance_valid(pause_overlay):
 		return
 	_pause_was_active = paused
@@ -883,17 +975,27 @@ func _menu_main() -> void:
 	_menu_clear("main")
 	var ended := sim.result != ""
 	pause_body.add_child(T.label("VICTOIRE" if sim.result == "victory" else ("EXPÉDITION PERDUE" if ended else "OPÉRATION SUSPENDUE"), "Heading"))
-	if ended:
+	if ended and not sim.operation.is_empty():
+		pause_body.add_child(T.wrap(T.label("Dernière Veille · %d personnes rapatriées, dont %d scientifiques.\nSG-11 : %d survivants rentrés.\nDurée : %d min %02d s · Colonnes ennemies : %d" % [sim.operation.evacuated, sim.operation.scientists_out, sim.operation.rescued_out, int(sim.elapsed) / 60, int(sim.elapsed) % 60, sim.wave], "Body")))
+	elif ended:
 		pause_body.add_child(T.wrap(T.label("Durée : %d min %02d s · Vagues : %d\nSurvivants : %d soldats, %d spécialistes\nStocks : %d ravitaillements · %d naquadah" % [int(sim.elapsed) / 60, int(sim.elapsed) % 60, sim.wave, sim.count("soldier"), sim.count("medic") + sim.count("scientist") + sim.count("engineer"), sim.supplies, sim.naquadah], "Body")))
 	else:
-		pause_body.add_child(T.wrap(T.label("Opération P3X-742 · Simulation suspendue. Partie non sauvegardée.", "Body", T.DIM)))
+		pause_body.add_child(T.wrap(T.label("Opération P3X-742 · Simulation suspendue. Sauvegarde automatique toutes les 5 secondes.", "Body", T.DIM)))
 	var resume := T.button("Observer le terrain" if ended else "Reprendre", _close_menu, "Accent")
 	pause_body.add_child(resume)
 	resume.grab_focus()
+	if not ended:
+		pause_body.add_child(T.button("Sauvegarder", func():
+			_save_notice = "Expédition sauvegardée." if save_checkpoint() else "Sauvegarde impossible. La partie reste ouverte."
+			_menu_main(), "Ghost"))
+		if not _save_notice.is_empty():
+			pause_body.add_child(T.wrap(T.label(_save_notice, "Body", T.BLUE)))
 	pause_body.add_child(T.button("Options", _menu_options, "Nav"))
 	pause_body.add_child(T.button("Commandes", _menu_controls, "Nav"))
+	if not sim.operation.is_empty():
+		pause_body.add_child(T.button("Journal de l’opération", _operation_journal, "Nav"))
 	pause_body.add_child(T.button("Recommencer", _restart, "Ghost"))
-	pause_body.add_child(T.button("Quitter l'expédition", _confirm_quit, "Danger"))
+	pause_body.add_child(T.button("Sauvegarder et quitter l'expédition" if not ended else "Quitter l'expédition", _confirm_quit, "Ghost"))
 
 
 func _close_menu() -> void:
@@ -928,8 +1030,13 @@ func _menu_controls() -> void:
 func _confirm_quit() -> void:
 	_menu_clear("confirm")
 	pause_body.add_child(T.label("QUITTER L'EXPÉDITION ?", "Section"))
-	pause_body.add_child(T.wrap(T.label("Cette opération n'est pas sauvegardée. Quitter abandonne la base et les unités déployées.", "Body")))
-	pause_body.add_child(T.button("Retour à la préparation", func(): get_tree().change_scene_to_file.call_deferred("res://outpost_menu.tscn"), "Danger"))
+	pause_body.add_child(T.wrap(T.label("La base, les unités et les convois seront sauvegardés. Vous pourrez reprendre l'opération depuis la préparation.", "Body")))
+	pause_body.add_child(T.button("Sauvegarder et revenir", func():
+		if save_checkpoint():
+			get_tree().change_scene_to_file.call_deferred("res://outpost_menu.tscn")
+		else:
+			_save_notice = "Sauvegarde impossible. La partie reste ouverte."
+			_menu_main(), "Accent"))
 	var cancel := T.button("Annuler", _menu_main, "Ghost")
 	pause_body.add_child(cancel)
 	cancel.grab_focus()
@@ -940,7 +1047,10 @@ func _restart() -> void:
 	_menu_clear("confirm")
 	pause_body.add_child(T.label("RECOMMENCER ?", "Heading"))
 	pause_body.add_child(T.wrap(T.label("Cette expédition sera remplacée par une nouvelle partie depuis l'arrivée de l'équipe SG.", "Body")))
-	pause_body.add_child(T.button("Recommencer", func(): get_tree().reload_current_scene.call_deferred(), "Danger"))
+	pause_body.add_child(T.button("Recommencer", func():
+		if not persistence_enabled or Expedition.clear_session():
+			persistence_enabled = false
+			get_tree().reload_current_scene.call_deferred(), "Danger"))
 	var cancel := T.button("Annuler", _menu_main, "Ghost")
 	pause_body.add_child(cancel)
 	cancel.grab_focus()
@@ -952,6 +1062,10 @@ func _zoom(amount: float) -> void:
 
 
 func _process(delta: float) -> void:
+	_save_clock += delta
+	if _save_clock >= 5:
+		_save_clock = 0
+		save_checkpoint()
 	# Une suspension ne doit pas rattraper des secondes de combat à la reprise.
 	if delta > 1.0 and not paused:
 		_toggle_pause()
@@ -1000,8 +1114,8 @@ func _update_ui() -> void:
 	stats.text = "R %d   N %d   ÉNERGIE %d/%d   %s" % [sim.supplies, sim.naquadah, p.x, p.y, "RAID %ds" % maxf(0, sim.raid_in) if sim.phase == "base" else "DÉPLOIEMENT SG"]
 	stats.add_theme_color_override("font_color", T.TEXT if sim.powered() else T.RED)
 	objective.text = "%s Alimenter la base\n%s %s\n%s %s" % [
-		"✓" if sim.count("generator") > 0 else "○", "✓" if sim.count("mine") > 0 else "○",
-		"Exploiter le gisement" if sim.deposit_found else "Reconnaître le nord-est",
+		"✓" if sim.powered() and sim.count("generator") > 0 else "○", "✓" if sim.extracted_naquadah >= Sim.EXTRACTION_GOAL else "○",
+		("Extraire %d/%d naquadah" % [sim.extracted_naquadah, Sim.EXTRACTION_GOAL]) if sim.deposit_found else "Reconnaître le nord-est",
 		"✓" if sim.count("camp") == 0 else "○", "Neutraliser le camp goa'uld" if sim.camp_found else "Localiser le camp goa'uld"]
 	if sim.phase == "arrival":
 		objective.text = "1 / 4 · PREMIER FRANCHISSEMENT\nComposition, activation de la porte, MALP puis première équipe SG.\nAucune base n'est encore installée."
@@ -1009,6 +1123,8 @@ func _update_ui() -> void:
 		objective.text = "2 / 4 · TÊTE DE PONT\n%s Reconnaître la clairière balisée\n%s Sécuriser le périmètre\nPuis appeler le déploiement du SGC." % ["✓" if sim.landing_scanned else "○", "✓" if sim.landing_secure() else "○"]
 	elif sim.phase in ["deployment", "establish"]:
 		objective.text = "3 / 4 · INSTALLATION\nProtégez le passage et les ingénieurs.\nGardez-les près du chantier jusqu'à la mise en service du commandement."
+	if not sim.operation.is_empty():
+		_update_operation_ui()
 	selected = selected.filter(func(id): return not sim.entity(id).is_empty())
 	if selected.is_empty() and command_tab == "selection":
 		_show_command_tab("base")
@@ -1040,9 +1156,9 @@ func _update_ui() -> void:
 	if ended and not _result_shown:
 		_result_shown = true
 		_menu.call_deferred()
-	status.text = "VICTOIRE · PLANÈTE SÉCURISÉE" if sim.result == "victory" else (
+	status.text = ("VICTOIRE · PERSONNEL RAPATRIÉ" if not sim.operation.is_empty() else "VICTOIRE · PLANÈTE SÉCURISÉE") if sim.result == "victory" else (
 		"DÉFAITE · EXPÉDITION PERDUE" if ended else ("PAUSE" if paused else (
-		"PLACEMENT : %s" % Sim.BUILDINGS[build_kind].name.to_upper() if build_kind != "" else "COMMANDEMENT TACTIQUE · PROTOTYPE")))
+		"PLACEMENT : %s" % Sim.BUILDINGS[build_kind].name.to_upper() if build_kind != "" else "COMMANDEMENT TACTIQUE · DERNIÈRE VEILLE" if not sim.operation.is_empty() else "COMMANDEMENT TACTIQUE · PROTOTYPE")))
 	if not sim.powered() and not ended:
 		status.text += " · ÉNERGIE INSUFFISANTE : installations arrêtées"
 	if not ended and not paused and sim.phase != "base":
@@ -1053,11 +1169,12 @@ func _update_ui() -> void:
 	deployment_button.disabled = paused or ended or sim.phase != "recon" or not sim.landing_secure() or sim.gate_busy()
 	deployment_button.text = "Convoi : %ds" % sim.gate_in if sim.phase == "deployment" and sim.gate_in > 0 else ("Installation du poste…" if sim.phase == "establish" else "Appeler le déploiement")
 	reinforcements.text = "Porte occupée · %ds" % sim.gate_in if sim.gate_in > 0 else "3 soldats · 85 R"
-	reinforcements.disabled = paused or ended or sim.phase != "base" or sim.gate_busy() or sim.supplies < 85 or sim.count("soldier") > 17
-	research_button.text = "Munitions améliorées ✓" if sim.researched else "Munitions +40 % · 30 N"
-	research_button.disabled = paused or ended or sim.researched or sim.count("lab") == 0 or sim.naquadah < 30 or not sim.powered()
+	reinforcements.disabled = paused or ended or sim.reinforce_error() != ""
+	reinforcements.tooltip_text = sim.reinforce_error()
+	research_button.text = sim.research_label()
+	research_button.disabled = paused or ended or sim.researched or sim.count("lab") == 0 or sim.naquadah < (80 if not sim.operation.is_empty() else 30) or not sim.powered()
 	for key in build_buttons:
-		build_buttons[key].disabled = paused or ended or sim.phase != "base" or sim.supplies < Sim.BUILDINGS[key].cost
+		build_buttons[key].disabled = paused or ended or sim.phase != "base" or sim.supplies < Sim.BUILDINGS[key].cost or (not sim.operation.is_empty() and sim.operation.stage == "evacuation")
 	_update_building_panel()
 	_update_unit_panel()
 
@@ -1084,6 +1201,14 @@ func _sync_visuals() -> void:
 		v.ring.visible = selected.has(e.id)
 		var label: Label3D = v.label
 		label.text = "%s%s" % [v.name, "\nChantier : %ds" % e.build if e.build > 0 else ""]
+		if e.kind == "turret" and e.build <= 0:
+			label.text += "\n" + sim.turret_status(e).text
+		if e.kind == "camp" and not sim.operation.is_empty():
+			var shielded: bool = sim.operation.stage in ["archives", "relays"]
+			label.text += "\nBOUCLIER ACTIF · COUPER LES RELAIS" if shielded else "\nBOUCLIER COUPÉ"
+			var shield := node.get_node_or_null("OperationShield")
+			if shield:
+				shield.visible = shielded
 		label.visible = sim.is_building(e) or selected.has(e.id) or e.side == "enemy"
 		label.modulate = T.RED if v.hit_until > sim.elapsed else (T.BLUE if e.side == "sgc" else T.RED)
 		if sim.is_building(e):
@@ -1124,13 +1249,14 @@ func _create_visual(e: Dictionary) -> void:
 	var damage: Node3D
 	var rotor: Node3D
 	var drill: Node3D
+	var muzzle: Marker3D
 	var label_height := 2.8
 	if not sim.is_building(e):
 		node = People.new()
 		add_child(node)
 		var uniform: String = e.get("member", ["oneill", "daniel", "carter"][int(e.id) % 3]) if e.side == "sgc" else "jaffa"
 		node.build(uniform)
-		caption = Sim.SPECIALISTS[e.kind].name.to_upper() if Sim.SPECIALISTS.has(e.kind) else ("SGC" if e.kind == "soldier" else "JAFFA")
+		caption = e.get("role_name", Sim.SPECIALISTS[e.kind].name.to_upper() if Sim.SPECIALISTS.has(e.kind) else ("SGC" if e.kind == "soldier" else "JAFFA"))
 		if e.get("first_wave", false) and sim.profile == "balanced":
 			caption = Data.MEMBERS[e.member].n.to_upper()
 		if e.kind == "engineer":
@@ -1150,6 +1276,11 @@ func _create_visual(e: Dictionary) -> void:
 		node.add_child(model)
 		label_height = model.get_meta("label_height", 5.0)
 		aim = model.find_child("Aim", true, false) as Node3D
+		if e.kind == "turret" and aim:
+			muzzle = Marker3D.new()
+			muzzle.name = "Muzzle"
+			muzzle.position = Vector3(0, 1.52, -1.8)
+			aim.add_child(muzzle)
 		damage = model.find_child("Damage", true, false) as Node3D
 		rotor = model.find_child("Rotor", true, false) as Node3D
 		drill = model.find_child("Drill", true, false) as Node3D
@@ -1157,6 +1288,20 @@ func _create_visual(e: Dictionary) -> void:
 			site = Assets.make("construction")
 			node.add_child(site)
 			site.visible = e.build > 0
+	if e.kind == "camp" and not sim.operation.is_empty():
+		var shield := MeshInstance3D.new()
+		shield.name = "OperationShield"
+		var sphere := SphereMesh.new()
+		sphere.radius = 5.5
+		sphere.height = 11
+		shield.mesh = sphere
+		var material := StandardMaterial3D.new()
+		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		material.albedo_color = Color(0.3, 0.65, 1.0, 0.16)
+		shield.material_override = material
+		shield.position.y = 1.0
+		node.add_child(shield)
 	node.position = _world(e.pos)
 	var radius := 1.9 if sim.is_building(e) else 0.85
 	var ring := _mesh(node, Gate.ring_mesh(radius - 0.09, radius, 0, -0.025, 32), color, Vector3(0, 0.06, 0))
@@ -1164,12 +1309,14 @@ func _create_visual(e: Dictionary) -> void:
 	var label := _label3d(node, caption, Vector3(0, label_height, 0), color)
 	visuals[e.id] = {"node": node, "ring": ring, "label": label, "name": caption,
 		"aim": aim, "model": model, "site": site, "damage": damage, "rotor": rotor,
-		"drill": drill, "hit_until": 0.0, "destroyed": false}
+		"drill": drill, "muzzle": muzzle, "hit_until": 0.0, "destroyed": false}
 
 
 func _shot(from: Vector2, to: Vector2, enemy: bool) -> void:
 	if not sim.is_visible(from):
 		return
+	var a := _world(from, 1.5)
+	var turret_shot := false
 	for e in sim.entities:
 		if e.side == ("enemy" if enemy else "sgc") and e.pos.distance_squared_to(from) < 0.01 and visuals.has(e.id):
 			var v: Dictionary = visuals[e.id]
@@ -1178,15 +1325,22 @@ func _shot(from: Vector2, to: Vector2, enemy: bool) -> void:
 				v.node.shoot()
 			if v.aim:
 				v.aim.rotation.y = atan2(from.x - to.x, from.y - to.y)
+			if v.get("muzzle"):
+				a = v.muzzle.global_position
+				turret_shot = true
+				var flash := _mesh(self, People.ball(0.24), Color("ffe5a0"), a)
+				flash.material_override = People.mat(Color("ffe5a0"), 0.5, 0, 3)
+				var flash_tween := create_tween()
+				flash_tween.tween_property(flash, "scale", Vector3.ONE * 0.1, 0.16)
+				flash_tween.tween_callback(flash.queue_free)
 			break
-	var a := _world(from, 1.5)
 	var b := _world(to, 1.3)
-	var beam := _mesh(self, People.box(0.08, 0.08, a.distance_to(b)), T.AMBER if enemy else T.BLUE, (a + b) * 0.5)
-	beam.material_override = People.mat(T.AMBER if enemy else T.BLUE, 0.5, 0, 2)
+	var beam := _mesh(self, People.box(0.08, 0.08, a.distance_to(b)), T.AMBER if enemy or turret_shot else T.BLUE, (a + b) * 0.5)
+	beam.material_override = People.mat(T.AMBER if enemy or turret_shot else T.BLUE, 0.5, 0, 2)
 	beam.look_at(b)
 	var impact := _mesh(self, People.ball(0.18), T.AMBER if enemy else T.BLUE, b)
 	var tw := create_tween()
-	tw.tween_interval(0.09)
+	tw.tween_interval(0.18 if turret_shot else 0.09)
 	tw.tween_callback(beam.queue_free)
 	tw.tween_callback(impact.queue_free)
 	if DisplayServer.get_name() != "headless" and not cam.is_position_behind(a) and get_viewport().get_visible_rect().has_point(cam.unproject_position(a)):
@@ -1300,6 +1454,14 @@ func _notification(what: int) -> void:
 		selection_rect.visible = false
 		if not paused:
 			_toggle_pause()
+		save_checkpoint()
+	elif what == NOTIFICATION_WM_CLOSE_REQUEST and is_node_ready():
+		if save_checkpoint():
+			get_tree().quit()
+		else:
+			_save_notice = "Sauvegarde impossible. La partie reste ouverte."
+			_menu()
+			_menu_main()
 
 
 func _input(e: InputEvent) -> void:
@@ -1382,3 +1544,69 @@ func _unhandled_input(e: InputEvent) -> void:
 				var shift := _ground(e.position - e.relative) - _ground(e.position)
 				focus += Vector3(shift.x * 2, 0, shift.y * 2) * Settings.value("cam_speed") / 100.0
 				_camera()
+
+
+func session_snapshot() -> Dictionary:
+	return {"version": 1, "simulation": sim.snapshot(), "view": {"focus": focus, "distance": distance,
+		"selected": selected.duplicate(), "tab": command_tab, "logs": logs.duplicate()}}
+
+
+func save_checkpoint() -> bool:
+	if not persistence_enabled:
+		return true
+	if sim == null:
+		return false
+	if not sim.result.is_empty():
+		return Expedition.clear_session()
+	return Expedition.save_session(session_snapshot())
+
+
+func _update_operation_ui() -> void:
+	var o: Dictionary = sim.operation
+	if sim.phase == "base":
+		objective.text = Sim.Operation.objective(sim)
+	elif sim.phase == "arrival":
+		objective.text = "1/7 · PREMIER CONTACT\nMALP puis équipe SG. Sécurisez la clairière avant de demander le déploiement."
+	else:
+		objective.text = "2/7 · TÊTE DE PONT\n" + ("Sécurisez la clairière puis appelez les ingénieurs." if sim.phase == "recon" else "Protégez les ingénieurs près du chantier du commandement.")
+	if sim.phase == "base" and o.stage not in ["evacuation", "complete"]:
+		objective.text += "\n\n" + Sim.Operation.rescue_text(sim)
+	operation_alert.text = ("%s · %ds" % [o.warning, maxi(0, ceili(sim.raid_in))]) if o.warning != "" else ""
+	if o.backup > 0:
+		operation_alert.text += "\nSecours : %ds" % ceili(o.backup)
+	operation_alert.visible = operation_alert.text != ""
+	for key in operation_buttons:
+		var button: Button = operation_buttons[key]
+		if key == "rescue_focus":
+			button.visible = not o.rescue_returned and not o.rescue_lost and o.stage not in ["evacuation", "complete"]
+			continue
+		if key.begins_with("focus_"):
+			button.visible = o.stage in ["relays", "assault"]
+			continue
+		button.visible = (o.stage == "relays" and not o.charged[0 if key == "relay_0" else 1]) if key.begins_with("relay_") else (o.stage == "ready" if key == "evacuate" else o.stage not in ["evacuation", "complete"])
+		var reason: String = sim.operation_error(key)
+		button.disabled = paused or reason != ""
+		button.tooltip_text = reason
+	var progress := 0.0
+	match o.stage:
+		"archives": progress = o.study / Sim.Operation.STUDY_TIME
+		"relays": progress = (o.relays[0] + o.relays[1]) / (2 * Sim.Operation.RELAY_TIME)
+		"transfer": progress = o.transfer / Sim.Operation.TRANSFER_TIME
+		"evacuation": progress = float(o.evacuated) / maxi(1, int(o.initial_evac))
+		"complete": progress = 1.0
+	mission_progress.value = progress * 100
+	mission_progress.visible = o.stage in ["archives", "relays", "transfer", "evacuation", "complete"]
+	for i in relay_markers.size():
+		relay_markers[i].visible = o.stage != "archives" and sim.is_explored(Sim.Operation.RELAYS[i])
+		relay_markers[i].get_node("FieldGenerator").visible = o.charged[i]
+		var label := relay_markers[i].get_node("RelayLabel") as Label3D
+		label.text = "RELAIS %s · %s" % ["NORD" if i == 0 else "EST", "COUPÉ" if o.relays[i] >= Sim.Operation.RELAY_TIME else "%d/45 s" % o.relays[i]]
+
+
+func _operation_journal() -> void:
+	_menu_clear("journal")
+	pause_body.add_child(T.label("DERNIÈRE VEILLE", "Heading"))
+	pause_body.add_child(T.wrap(T.label("Ordre de mission original · après l'échange avec Orban.\nLe SGC déploie du personnel et des modules ; les archives restent une technologie à comprendre. Les extracteurs conditionnent le naquadah en combustible utilisable par les générateurs.", "Body", T.DIM)))
+	for entry in sim.operation.history:
+		pause_body.add_child(T.wrap(T.label("%02d:%02d · %s" % [int(entry.time) / 60, int(entry.time) % 60, entry.text], "Body", T.TEXT)))
+	pause_body.add_child(T.button("Retour", _menu_main, "Ghost"))

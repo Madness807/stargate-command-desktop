@@ -115,9 +115,60 @@ func _ready() -> void:
 	_test_results()
 	_test_mutual_kill()
 	_test_frame_timing()
+	_test_targeting_info()
+	_test_line_of_fire()
 	Game.stats = campaign
 	print("Temps réel : %d/%d vérifications réussies" % [checks - fails, checks])
 	get_tree().quit(1 if fails else 0)
+
+
+func _test_targeting_info() -> void:
+	var f := fixture()
+	var c: Node = f.combat
+	c.select(0)
+	c.units[0].attack_target = 4
+	check("cible exposée" in c.targeting_info(c.units[0]), "cible sans couvert annoncée exposée")
+	f.planet.blocked[Vector2i(6, 3)] = "obj"
+	var info: String = c.targeting_info(c.units[0])
+	check("cible à couvert" in info and ("tir %d %%" % c.hit_chance(c.units[0], c.units[4])) in info, "couvert et probabilité affichés selon les règles de tir")
+	c.units[0].range = 1
+	info = c.targeting_info(c.units[0])
+	check("HORS PORTÉE" in info and "tir " not in info, "pas de pourcentage de tir pour une cible hors portée")
+	dispose(f)
+
+
+func _test_line_of_fire() -> void:
+	var ray = preload("res://scripts/line_of_fire.gd")
+	var walls := {Vector2i(4, 3): true}
+	var opaque := func(tile: Vector2i): return walls.has(tile)
+	check(not ray.clear(Vector2(2, 3), Vector2(7, 3), opaque) and not ray.clear(Vector2(7, 3), Vector2(2, 3), opaque), "mur : blocage symétrique")
+	check(ray.clear(Vector2(2, 2), Vector2(7, 2), opaque), "ligne dégagée à côté du mur")
+	var corner := func(tile: Vector2i): return tile == Vector2i(3, 2)
+	check(not ray.clear(Vector2(2, 2), Vector2(3, 3), corner) and not ray.clear(Vector2(3, 3), Vector2(2, 2), corner), "pas de tir diagonal au travers d'un coin opaque")
+	check(ray.clear(Vector2(2, 2), Vector2(3, 2), corner), "la cible peut occuper une case de bâtiment")
+	var f := fixture()
+	var c: Node = f.combat
+	c.select(0)
+	c.units[0].attack_target = 4
+	f.planet.blocked[Vector2i(4, 3)] = "wall"
+	f.planet.grid.set_point_solid(Vector2i(4, 3), true)
+	var player_hp: int = c.units[0].hp
+	var enemy_hp: int = c.units[4].hp
+	var shots: int = c.effects.get_child_count()
+	c._fire(c.units[0], c.units[4])
+	c._fire(c.units[4], c.units[0])
+	check(c.units[0].hp == player_hp and c.units[4].hp == enemy_hp and c.effects.get_child_count() == shots, "mur : aucun dégât ni projectile des deux camps")
+	check("TIR BLOQUÉ" in c.targeting_info(c.units[0]) and "tir " not in c.targeting_info(c.units[0]), "obstacle bloquant annoncé sans probabilité trompeuse")
+	f.planet.blocked[Vector2i(4, 3)] = "obj"
+	check(c.line_of_fire(c.units[0], c.units[4]), "couvert bas : le tir reste possible")
+	f.planet.blocked[Vector2i(4, 3)] = "wall"
+	c.on_tap(c.units[4].tile)
+	for u in c.units:
+		if u.side == "foe":
+			u.stun = 20.0
+	advance(c, 6)
+	check(c.units[0].node.position.distance_to(f.planet.tile_pos(Vector2i(2, 3))) > 0.1 and c.line_of_fire(c.units[0], c.units[4]), "ordre d'attaque : contourne le mur pour retrouver un tir")
+	dispose(f)
 
 
 func _test_simultaneous() -> void:
@@ -130,7 +181,7 @@ func _test_simultaneous() -> void:
 	for u in c.units:
 		if u.side == "sg1":
 			ally_hurt = ally_hurt or u.hp < u.hpmax
-			check(u.ap == 1, "pas de dépense de points d'action")
+			check(not u.has("ap") and not u.has("move"), "unité sans réserve d'actions ni quota de déplacement")
 		else:
 			foe_hurt = foe_hurt or u.hp < u.hpmax
 	check(ally_hurt and foe_hurt, "les deux camps tirent sans aucune fin de tour")
@@ -239,6 +290,12 @@ func _test_skills() -> void:
 	boss_fixture.combat._ability()
 	boss_fixture.combat.advance(0.1)
 	check(boss_fixture.combat.units[4].dmg < before, "traduction de Daniel affaiblit un boss")
+	var weakened: int = boss_fixture.combat.units[4].dmg
+	for repeat in 4:
+		boss_fixture.combat.units[2].cd = 0.0
+		boss_fixture.combat._ability()
+		boss_fixture.combat.advance(0.1)
+	check(weakened == maxi(1, roundi(before * 0.75)) and boss_fixture.combat.units[4].dmg == weakened, "traductions répétées : réduction unique de 25 %")
 	dispose(boss_fixture)
 
 
@@ -267,7 +324,7 @@ func _test_results() -> void:
 		if u.side == "foe":
 			c._damage(u, 9999)
 	c.advance(0.1)
-	check(results == ["win"] and c.turn == "over", "victoire émise une fois après élimination")
+	check(results == ["win"] and c._done, "victoire émise une fois après élimination")
 	var clock: float = c.combat_clock
 	c.advance(10)
 	check(c.combat_clock == clock and results.size() == 1, "aucun tir ou résultat après fin du combat")

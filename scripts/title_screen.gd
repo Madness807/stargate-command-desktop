@@ -158,7 +158,8 @@ func _main_page() -> void:
 	_link.visible = true
 	_text("CAMPAGNE SG-1", 18, T.BLUE)
 	if Game.has_save():
-		_button("Continuer la campagne", continue_requested.emit, "Accent", "Rejoindre la base du SGC · Entrée")
+		var label: String = "Continuer la campagne" if Game.mission_state.is_empty() else "Reprendre la mission · " + Data.PLANETS[int(Game.mission_state.planet)].n
+		_button(label, continue_requested.emit, "Accent", "Reprendre la campagne · Entrée")
 		var done := int(Game.stats.done)
 		var where: String = "Toutes les missions accomplies" if done >= Data.PLANETS.size() else "Prochaine mission : %s" % Data.PLANETS[done].n
 		_text("Niveau %d · %s" % [Game.stats.lvl, where], 19, T.DIM)

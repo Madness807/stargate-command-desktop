@@ -23,6 +23,20 @@ func advance(delta: float) -> void:
 func _draw() -> void:
 	if not is_instance_valid(view):
 		return
+	for id in view.selected:
+		var turret: Dictionary = view.sim.entity(id)
+		if turret.is_empty() or turret.kind != "turret":
+			continue
+		var points := PackedVector2Array()
+		for i in 65:
+			var angle := TAU * i / 64.0
+			var world: Vector3 = view._world(turret.pos + Vector2(cos(angle), sin(angle)) * 5.5, 0.15)
+			if view.cam.is_position_behind(world):
+				points.clear()
+				break
+			points.append(view.cam.unproject_position(world))
+		if points.size() > 1:
+			draw_polyline(points, Color(T.BLUE if view.sim.powered() else T.RED, 0.8), 2.0, true)
 	for e in view.sim.entities:
 		if not view.sim.entity_visible(e) or (e.hp >= e.max_hp and not view.selected.has(e.id) and e.build <= 0):
 			continue

@@ -47,10 +47,30 @@ func _ready() -> void:
 	check(AudioServer.is_bus_mute(master), "option arrière-plan respecte le volume zéro")
 	Audio.loop_play("horizon", -16)
 	check(Audio._loops.has("horizon"), "création d'une boucle")
+	var previous: AudioStreamPlayer = Audio._loops["horizon"]
 	Audio.loop_play("horizon", -16)
 	check(Audio._loops.size() == 1, "relancer une boucle ne la duplique pas")
+	check(not previous.playing and previous.is_queued_for_deletion(), "ancienne boucle arrêtée avant sa suppression")
+	var current: AudioStreamPlayer = Audio._loops["horizon"]
 	Audio.loop_stop("horizon", 0)
 	check(Audio._loops.is_empty(), "arrêt de la boucle")
+	check(not current.playing and current.is_queued_for_deletion(), "arrêt immédiat libère la lecture audio")
+	Audio.loop_play("horizon", -16)
+	var fading: AudioStreamPlayer = Audio._loops["horizon"]
+	Audio.loop_stop("horizon", 0.01)
+	check(fading.playing and Audio._loops.is_empty(), "fondu conserve la lecture jusqu'à son terme")
+	await get_tree().create_timer(0.05).timeout
+	await get_tree().process_frame
+	check(not is_instance_valid(fading), "fondu terminé supprime le lecteur")
+	var isolated_audio = load("res://scripts/audio.gd").new()
+	add_child(isolated_audio)
+	isolated_audio.play("press")
+	isolated_audio.loop_play("horizon")
+	remove_child(isolated_audio)
+	for player in isolated_audio.get_children():
+		check(not player.playing, "sortie de scène arrête chaque lecture")
+	check(isolated_audio._loops.is_empty(), "sortie de scène vide les boucles")
+	isolated_audio.free()
 	Audio._background = saved_background
 	Audio._mute_background = saved_mute
 	Audio._master_silent = saved_silent

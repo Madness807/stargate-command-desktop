@@ -93,6 +93,7 @@ func _ready() -> void:
 	sim.assign_squad(9, [soldier.id])
 	check(sim.squad_members(9).is_empty(), "emplacement invalide ignoré")
 	var view := Outpost.new()
+	view.persistence_enabled = false
 	view.sim = Sim.new({"established": true})
 	add_child(view)
 	await get_tree().process_frame

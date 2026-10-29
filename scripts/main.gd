@@ -70,12 +70,21 @@ var _squad_panel: Control
 var _journal_panel: Control
 var _team_toggle: Button
 var _journal_toggle: Button
+var _mission_entry_naq := 0
+var _mission_objective: Label
+var _mission_objective_panel: PanelContainer
+var _mission_work_status: Label
+var _mission_work_bar: ProgressBar
+var _mission_objective_button: Button
 
 # Le déroulement
 var busy := false
 var current := -1
 var event_open := false
 var _reward := {}
+var _checkpoint_clock := 0.0
+var _restoring_session := false
+var _active_poi := -1
 
 # Le débogage (voir cli.gd et debug_harness.gd)
 var auto_planet := -1
@@ -83,6 +92,7 @@ var clock := 0.0
 
 
 func _ready() -> void:
+	get_tree().auto_accept_quit = false
 	auto_planet = int(Cli.number("--auto", -1))
 	add_child(DebugHarness.new(self))
 	_build_world()
@@ -129,6 +139,11 @@ func _debug_jumps() -> void:
 
 func _process(delta: float) -> void:
 	clock += delta
+	if planet and Game.mission_capture == Callable(self, "capture_mission"):
+		_checkpoint_clock += delta
+		if _checkpoint_clock >= 5:
+			_checkpoint_clock = 0
+			save_checkpoint()
 	top_bar.visible = title_screen == null and not hub.visible and not sgc.visible and title_lbl.text != ""
 	if title_screen:
 		# Un très léger travelling ; la rampe et le cadre de la salle restent lisibles.
@@ -307,6 +322,9 @@ func _build_ui() -> void:
 
 	pause_menu = PauseMenu.new()
 	pause_menu.abandon_requested.connect(_abandon)
+	pause_menu.save_requested.connect(_save_from_pause)
+	pause_menu.suspend_requested.connect(_suspend_mission)
+	pause_menu.quit_requested.connect(_save_and_quit)
 	ui.add_child(pause_menu)
 
 	flash = ColorRect.new()
@@ -321,6 +339,7 @@ func _build_ui() -> void:
 func _fit_mission_ui() -> void:
 	# Les portraits et le journal se replient sur les petits écrans logiques.
 	var compact := ui.size.x < 1250
+	sub_text.add_theme_font_size_override("font_size", 23)
 	bottom.offset_left = 16 if compact else 340
 	bottom.offset_bottom = -20
 	if is_instance_valid(_team_toggle):
@@ -337,6 +356,25 @@ func _fit_mission_ui() -> void:
 		_squad_panel.offset_top = 134 if compact else 0
 		_squad_panel.offset_bottom = 134 if compact else -20
 		_squad_panel.grow_vertical = Control.GROW_DIRECTION_END if compact else Control.GROW_DIRECTION_BEGIN
+	if is_instance_valid(_mission_objective_panel):
+		_mission_objective_panel.size.x = minf(520, ui.size.x * 0.48)
+		_mission_objective_panel.visible = true
+		var short_screen := ui.size.y < 650
+		var landscape := ui.size.y < 520
+		_mission_objective_panel.position.y = 72 if landscape else 120
+		_team_toggle.position = Vector2(ui.size.x - 360, 72) if landscape else Vector2(16, 72)
+		_journal_toggle.position = Vector2(ui.size.x - 190, 72) if landscape else Vector2(180, 72)
+		_mission_objective.add_theme_font_size_override("font_size", 18 if short_screen else 22)
+		_mission_work_status.add_theme_font_size_override("font_size", 18 if short_screen else 22)
+		_mission_objective_button.add_theme_font_size_override("font_size", 18 if short_screen else 22)
+		_mission_objective_button.custom_minimum_size.y = 40 if short_screen else 52
+		sub_text.add_theme_font_size_override("font_size", 18 if short_screen else 23)
+		for button in combat_bar.get_children():
+			button.add_theme_font_size_override("font_size", 16 if short_screen else 19)
+			button.custom_minimum_size = Vector2(110, 44) if short_screen else Vector2(140, 58)
+		_fit_objective_panel.call_deferred()
+		if planet and planet.combat:
+			planet.combat.refresh_panel()
 
 
 ## Une transmission : le nom de qui parle et son texte ; en mission, elle s'inscrit au journal
@@ -691,7 +729,7 @@ func show_title() -> void:
 	Audio.loop_play("theme", -7.0)
 	_close_title()
 	title_screen = TitleScreen.new()
-	title_screen.continue_requested.connect(_leave_title)
+	title_screen.continue_requested.connect(_continue_campaign)
 	title_screen.outpost_requested.connect(_start_outpost)
 	title_screen.assets_requested.connect(_start_asset_gallery)
 	title_screen.new_game_requested.connect(func():
@@ -837,6 +875,9 @@ func _unhandled_input(e: InputEvent) -> void:
 func open_pause() -> void:
 	if title_screen or hub.visible or title_lbl.text == "":
 		return
+	if planet:
+		save_checkpoint()
+	pause_menu.mission_help = planet.mission.guidance() if planet and planet.mission != null else ""
 	pause_menu.open(title_lbl.text, planet != null, _can_abandon())
 
 
@@ -844,8 +885,7 @@ func open_pause() -> void:
 func _can_abandon() -> bool:
 	if not planet or planet.input_locked:
 		return false
-	var c = planet.combat
-	return c == null or not c.busy
+	return true
 
 
 ## Quitter la planète en cours : retour au SGC (ou à l'écran titre) sans finir la mission
@@ -854,7 +894,18 @@ func _abandon(to_title: bool) -> void:
 		return
 	if planet.combat and not planet.combat.tactical_paused:
 		planet.combat.toggle_tactical_pause()
+	var previous_state: Dictionary = Game.mission_state
+	var previous_capture: Callable = Game.mission_capture
+	Game.mission_capture = Callable()
+	Game.mission_state = {}
+	if not Game.save_game():
+		Game.mission_state = previous_state
+		Game.mission_capture = previous_capture
+		open_pause()
+		pause_menu.save_feedback(false)
+		return
 	busy = true
+	planet.input_locked = true
 	clear_actions()
 	sub_panel.visible = false
 	Audio.play("close")
@@ -873,7 +924,9 @@ func _abandon(to_title: bool) -> void:
 
 # ---------- La planète ----------
 
-func start_planet() -> void:
+func start_planet(saved: Dictionary = {}) -> void:
+	_mission_entry_naq = int(saved.get("entry_naq", Game.stats.naq))
+	_restoring_session = not saved.is_empty()
 	sgc.close()
 	room.visible = false
 	gate.visible = false
@@ -881,10 +934,14 @@ func start_planet() -> void:
 	title_lbl.text = ""
 	planet = PlanetScript.new()
 	add_child(planet)
-	planet.setup(current, Game.team, randi())
-	for k in Game.team:
-		if Game.stats.hp[k] <= 0:
-			Game.stats.hp[k] = 1
+	var deployed: Array = Game.team.duplicate()
+	if not saved.is_empty():
+		deployed = saved.world.members.map(func(member): return member.kind)
+	planet.setup(current, deployed, randi() if saved.is_empty() else int(saved.world.seed))
+	if saved.is_empty():
+		for k in Game.team:
+			if Game.stats.hp[k] <= 0:
+				Game.stats.hp[k] = 1
 	var d: Dictionary = Data.PLANETS[current]
 	var sun := DirectionalLight3D.new()
 	sun.add_to_group("sun")
@@ -900,6 +957,36 @@ func start_planet() -> void:
 	planet.gate_near.connect(_on_gate_near)
 	_planet_env(d)
 	_build_hud()
+	Game.mission_capture = Callable(self, "capture_mission")
+	_checkpoint_clock = 0
+	if not saved.is_empty():
+		var compatible: bool = saved.world.resolved.size() == planet.pois.size() and saved.poi < planet.pois.size()
+		if compatible and not saved.combat.is_empty():
+			compatible = saved.combat.units.size() == deployed.size() + planet.pois[saved.poi].actors.size()
+		if not compatible:
+			_end_planet(false)
+			_restoring_session = false
+			show_menu("briefing")
+			hub.notice("Cette mission sauvegardée n'est pas compatible avec la carte actuelle. La sauvegarde a été conservée.")
+			return
+		planet.restore_snapshot(saved.world)
+		log_lines.clear()
+		for entry in saved.journal:
+			_log(entry[0], entry[1])
+		if not saved.combat.is_empty():
+			var p: Dictionary = planet.pois[saved.poi]
+			start_combat(p, saved.reward.xp, saved.reward.naq, saved.combat)
+		elif saved.poi >= 0 and not planet.pois[saved.poi].done:
+			_on_poi(planet.pois[saved.poi])
+		_restoring_session = false
+		fade(Color(WHITE, 0.0), 0.3)
+		_update_hud()
+		save_checkpoint()
+		if not planet.combat:
+			open_pause()
+		return
+	Game.mission_state = capture_mission(true)
+	Game.save_game()
 	fade(Color(WHITE, 0.0), 0.6)
 	if d.gate:
 		Audio.play("kawoosh")
@@ -907,6 +994,8 @@ func start_planet() -> void:
 	banner(d.n.to_upper(), "MISSION %02d  ·  %s" % [current + 1, "PAR LA PORTE DES ÉTOILES" if d.gate else "PAR LES ANNEAUX DE TRANSPORT"])
 	await planet.arrive()
 	say("COLONEL O'NEILL", "Touchez le terrain pour déplacer l'équipe. Glissez pour la caméra, pincez ou molette pour zoomer ; au clavier, ZQSD, A/E et +/−.")
+	if planet.mission != null:
+		say("GÉNÉRAL HAMMOND", "Retrouvez Kasuf, déchiffrez l'accès au dispositif et ramenez Skaara. La mission sera validée au DHD. Le bouton Objectif vous guide ; Espace met le combat en pause.")
 	if auto_planet >= 0:
 		_auto_explore()
 
@@ -982,11 +1071,54 @@ func _build_hud() -> void:
 	sq.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	sq.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud.add_child(sq)
-	_team_toggle = T.button("ÉQUIPE ▸", func(): _squad_panel.visible = not _squad_panel.visible, "Ghost")
+	_team_toggle = T.button("ÉQUIPE ▸", func():
+		_squad_panel.visible = not _squad_panel.visible
+		if is_instance_valid(_mission_objective_panel):
+			_mission_objective_panel.visible = not _squad_panel.visible, "Ghost")
 	_team_toggle.position = Vector2(16, 72)
 	hud.add_child(_team_toggle)
+	_mission_objective = null
+	_mission_objective_panel = null
+	_mission_work_status = null
+	_mission_work_bar = null
+	if planet != null and planet.mission != null:
+		_mission_objective_panel = PanelContainer.new()
+		_mission_objective_panel.position = Vector2(16, 120)
+		_mission_objective_panel.size.x = minf(520, ui.size.x * 0.48)
+		_mission_objective_panel.add_theme_stylebox_override("panel", T.box(Color(DARK, 0.9), T.BLUE, 8, 1, 12))
+		hud.add_child(_mission_objective_panel)
+		var objective_body := VBoxContainer.new()
+		_mission_objective_panel.add_child(objective_body)
+		_mission_objective = T.wrap(T.label(planet.mission.objective(), "Body", T.TEXT))
+		_mission_objective.max_lines_visible = 3
+		objective_body.add_child(_mission_objective)
+		_mission_work_status = T.wrap(T.label("", "Body", T.BLUE))
+		_mission_work_status.max_lines_visible = 3
+		objective_body.add_child(_mission_work_status)
+		_mission_work_bar = T.gauge(0, 100, T.BLUE, 10)
+		_mission_work_bar.step = 0
+		objective_body.add_child(_mission_work_bar)
+		_mission_objective_button = T.button("Objectif · rejoindre / voir", func():
+			if planet.input_locked:
+				return
+			if planet.combat:
+				planet.focus(planet.tile_pos(planet.objective_tile()), 0.4)
+			else:
+				planet.walk_to(planet.objective_tile())
+				planet.focus(planet.tile_pos(planet.objective_tile()), 0.4), "Ghost")
+		var objective_actions := HBoxContainer.new()
+		objective_body.add_child(objective_actions)
+		_mission_objective_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		objective_actions.add_child(_mission_objective_button)
+		var help_button := T.button("Aide", func():
+			open_pause()
+			pause_menu._controls(), "Ghost")
+		objective_actions.add_child(help_button)
+		_mission_objective_panel.minimum_size_changed.connect(_fit_objective_panel)
+		_fit_objective_panel.call_deferred()
 	squad.clear()
-	for k in Game.team:
+	var displayed_team: Array = Game.team if planet == null else planet.team.map(func(member): return member.kind)
+	for k in displayed_team:
 		var m: Dictionary = Data.MEMBERS[k]
 		var card := PanelContainer.new()
 		var sb := T.box(Color(0.03, 0.045, 0.07, 0.88), Color(T.LINE, 0.6), 8, 1, 7)
@@ -1079,10 +1211,24 @@ func _build_hud() -> void:
 	_fit_mission_ui()
 
 
+func _fit_objective_panel() -> void:
+	if is_instance_valid(_mission_objective_panel):
+		_mission_objective_panel.size = Vector2(minf(520, ui.size.x * 0.48), _mission_objective_panel.get_combined_minimum_size().y)
+
+
 func _update_hud() -> void:
 	if squad.is_empty() or not planet:
 		return
 	var s: Dictionary = Game.stats
+	if is_instance_valid(_mission_objective) and planet.mission != null:
+		_mission_objective.text = planet.mission.objective(ui.size.y < 520)
+		_mission_objective_panel.size.x = minf(520, ui.size.x * 0.48)
+		var work: Dictionary = planet.combat.work_status(ui.size.y < 520) if planet.combat else {}
+		_mission_work_status.visible = not work.is_empty()
+		_mission_work_bar.visible = not work.is_empty()
+		if not work.is_empty():
+			_mission_work_status.text = work.text
+			_mission_work_bar.value = work.value
 	var act := ""
 	var c = planet.combat
 	if c and c.active >= 0:
@@ -1112,6 +1258,8 @@ func _update_hud() -> void:
 		title_lbl.text = "%s  //  %s" % [where, "PAUSE TACTIQUE" if c.tactical_paused else "COMBAT EN TEMPS RÉEL"]
 	else:
 		title_lbl.text = "%s  //  %s" % [where, ("%d LIEU%s À EXPLORER" % [left, "X" if left > 1 else ""]) if left > 0 else "ZONE EXPLORÉE · RETOUR À LA PORTE"]
+		if planet.mission != null:
+			title_lbl.text = "ABYDOS  //  " + ("EXTRACTION DE SKAARA" if planet.mission.recovered else "OPÉRATION SKAARA")
 	top_info.text = "NIV %d    XP %d/%d    NAQUADAH %d    TROUSSES %d" % [s.lvl, s.xp, Game.xp_to_next(), s.naq, s.kits]
 
 
@@ -1121,8 +1269,6 @@ func _squad_pick(k: String) -> void:
 		return
 	var c = planet.combat
 	if c:
-		if c.busy:
-			return
 		for i in c.units.size():
 			var u: Dictionary = c.units[i]
 			if u.side == "sg1" and u.kind == k and u.alive:
@@ -1139,7 +1285,7 @@ func _squad_pick(k: String) -> void:
 				_squad_panel.hide()
 
 
-# ---------- Ce qu'appelle le combat (combat.gd) ----------
+# ---------- Interface du combat temps réel ----------
 
 ## La fiche du membre actif en combat (pas inscrite au journal)
 func combat_status(u: Dictionary, info: String) -> void:
@@ -1161,6 +1307,9 @@ func action_grid(items: Array) -> void:
 			cb.call(), _variation(it[1]), "Touche %d" % (i + 1))
 		b.custom_minimum_size = Vector2(140, 58)
 		b.add_theme_font_size_override("font_size", 19)
+		if is_instance_valid(_mission_objective_panel) and ui.size.y < 650:
+			b.add_theme_font_size_override("font_size", 16)
+			b.custom_minimum_size = Vector2(110, 44)
 		b.disabled = Color(it[1]).is_equal_approx(Color(0.4, 0.4, 0.45))
 		combat_bar.add_child(b)
 
@@ -1183,13 +1332,31 @@ func _event(who: String, text: String) -> void:
 
 func _close_event(text: String = "") -> void:
 	event_open = false
+	_active_poi = -1
 	clear_actions()
 	if text != "":
 		say("SG-1", text)
 	_update_hud()
+	if Game.mission_capture == Callable(self, "capture_mission"):
+		save_checkpoint()
 
 
 func _on_poi(p: Dictionary) -> void:
+	_active_poi = planet.pois.find(p)
+	if planet.mission != null:
+		var mission = planet.mission
+		if p.get("id", "") == "kasuf":
+			mission.contacted = true
+			planet.resolve(p, true)
+			planet.reveal(Vector2i(7, 10), 3)
+			_close_event("Kasuf : Skaara est prisonnier de Klorel. Daniel doit traduire la console au sud-ouest. Le passage est longe une patrouille ; le détour ouest évite son poste.")
+			return
+		if p.get("id", "") == "translation" and not mission.contacted:
+			_close_event("Daniel : retrouvons Kasuf avant d'intervenir. Il connaît le dispositif qui protège Skaara.")
+			return
+		if p.k == "boss" and not mission.translated:
+			_close_event("Carter : bouclier actif. Daniel doit d'abord traduire la console gardée ; retrouvez Kasuf si nécessaire.")
+			return
 	var d: Dictionary = Data.PLANETS[current]
 	var tier := current + 1
 	match p.k:
@@ -1232,15 +1399,18 @@ func _on_poi(p: Dictionary) -> void:
 		"piege":
 			Audio.play("glider")
 			planet.resolve(p, true)
+			_hurt_all(2 * tier + randi_range(0, 4))
+			if Game.mission_capture == Callable(self, "capture_mission"):
+				save_checkpoint()
 			await planet.glider_strafe()
 			Audio.play("boom")
 			_close_event("Un planeur de la mort mitraille l'équipe en rase-mottes !")
-			_hurt_all(2 * tier + randi_range(0, 4))
 	_update_hud()
 
 
 ## Un allié de passage : un Nox, un agent de la Tok'ra ou Thor
 func _ally(p: Dictionary, tier: int) -> void:
+	p.done = true
 	var a: String = ["nox", "tokra", "thor"].pick_random()
 	Audio.play("heal")
 	planet.show_ally(p, a)
@@ -1255,15 +1425,15 @@ func _ally(p: Dictionary, tier: int) -> void:
 			Audio.play("asgard")
 			_gain_xp(10 * tier)
 			_close_event("Thor se téléporte un instant : « O'Neill. » +%d XP." % (10 * tier))
-	p.done = true
 
 
 # ---------- Le combat ----------
 
-func start_combat(p: Dictionary, xp: int, naq: int) -> void:
+func start_combat(p: Dictionary, xp: int, naq: int, saved: Dictionary = {}) -> void:
 	if planet == null or planet.combat != null or p.get("done", false):
 		return
 	event_open = true
+	_active_poi = planet.pois.find(p)
 	clear_actions()
 	_reward = {"p": p, "xp": xp, "naq": naq}
 	Audio.play("staff")
@@ -1274,10 +1444,15 @@ func start_combat(p: Dictionary, xp: int, naq: int) -> void:
 	var deployed: Array = []
 	for member in planet.team:
 		deployed.append(member.kind)
-	c.start(planet, self, p, deployed, Game.stats.hp, Game.stats.lvl, current + 1, Game.gear())
+	c.start(planet, self, p, deployed, Game.stats.hp, Game.stats.lvl if saved.is_empty() else saved.level, current + 1, Game.gear() if saved.is_empty() else saved.gear)
+	if not saved.is_empty():
+		c.restore_snapshot(saved)
+	if Game.mission_capture == Callable(self, "capture_mission"):
+		save_checkpoint()
 
 
 func _on_combat_end(result: String) -> void:
+	Game.begin_transaction()
 	var c = planet.combat
 	var p: Dictionary = _reward.p
 	var h: Dictionary = c.member_hp()
@@ -1291,23 +1466,29 @@ func _on_combat_end(result: String) -> void:
 	c.queue_free()
 	event_open = false
 	match result:
-		"win", "talk":
+		"win":
 			p.done = true
 			_hide_fallen(foes)
-			var xp: int = _reward.xp if result == "win" else int(_reward.xp / 2)
-			var naq: int = _reward.naq if result == "win" else 0
+			var xp: int = _reward.xp
+			var naq: int = _reward.naq
 			Game.add_naq(naq)
 			_gain_xp(xp)
 			if p.k == "boss":
-				_planet_freed()
+				if planet.mission != null:
+					planet.mission.recovered = true
+					banner("SKAARA RÉCUPÉRÉ", "EXTRACTION REQUISE · REJOIGNEZ LE DHD", T.BLUE)
+					_close_event("Carter : Klorel est neutralisé, Skaara est stabilisé pour le transport. On le prend en charge. Rejoignez le DHD pour appeler le SGC ; Fraiser s'occupera de lui sur Terre.")
+				else:
+					_planet_freed()
 			else:
 				Audio.play("found")
-				_close_event(("Victoire ! +%d XP, +%d naquadah." % [xp, naq]) if result == "win" else ("Paix négociée. +%d XP." % xp))
+				_close_event("Victoire ! +%d XP, +%d naquadah." % [xp, naq])
 		"lose":
 			_evacuate()
 		"flee":
-			_retreat()
+			_retreat(c.retreat_reason)
 	_update_hud()
+	Game.end_transaction()
 
 
 ## Les ennemis vaincus rétrécissent puis disparaissent
@@ -1354,9 +1535,9 @@ func _hurt_all(dmg: int) -> void:
 		_evacuate()
 
 
-func _retreat() -> void:
+func _retreat(reason: String = "") -> void:
 	planet.retreat()
-	_close_event("L'équipe décroche et se replie près de la porte.")
+	_close_event(reason if not reason.is_empty() else "L'équipe décroche et se replie près de la porte.")
 
 
 ## Une trousse sur la carte, hors combat : soigne le membre le plus blessé
@@ -1383,10 +1564,26 @@ func _on_gate_near(near: bool) -> void:
 		return
 	clear_actions()
 	if near:
-		add_action("Composer la Terre sur le DHD" if Data.PLANETS[current].gate else "Appeler le Tel'tak tok'ra", C_GO, leave_planet)
+		var label := "Composer la Terre sur le DHD" if Data.PLANETS[current].gate else "Appeler le Tel'tak tok'ra"
+		if planet.mission != null:
+			label = "Extraire Skaara · valider l'opération" if planet.mission.recovered else "Retour anticipé · Skaara reste à sauver"
+		add_action(label, C_GO, leave_planet)
 
 
 func leave_planet() -> void:
+	if planet == null or planet.input_locked or planet.combat != null:
+		return
+	var home := PlanetScript.DHD_TILE if Data.PLANETS[current].gate else Vector2i(3, 3)
+	if planet._cheb(planet.leader_tile, home) > 2:
+		return
+	Game.begin_transaction()
+	Game.mission_capture = Callable()
+	Game.mission_state = {}
+	if planet.mission != null and planet.mission.recovered and not planet.mission.extracted:
+		planet.mission.extracted = true
+		Game.complete_mission(current)
+		banner("SKAARA ÉVACUÉ", "OPÉRATION ABYDOS RÉUSSIE", T.GREEN)
+	Game.end_transaction()
 	clear_actions()
 	if Data.PLANETS[current].gate:
 		say("COLONEL O'NEILL", "On rentre à la maison. Carter, le code IDC.")
@@ -1410,7 +1607,12 @@ func leave_planet() -> void:
 		show_menu()
 
 
-func _end_planet() -> void:
+func _end_planet(clear_checkpoint: bool = true) -> void:
+	if Game.mission_capture == Callable(self, "capture_mission"):
+		Game.mission_capture = Callable()
+	if clear_checkpoint:
+		Game.mission_state = {}
+	_active_poi = -1
 	if hud:
 		hud.queue_free()
 		hud = null
@@ -1427,6 +1629,15 @@ func _end_planet() -> void:
 
 ## Toute l'équipe à terre : rapatriement d'urgence
 func _evacuate() -> void:
+	if planet:
+		planet.input_locked = true
+		planet.moving = false
+	Game.mission_capture = Callable()
+	Game.mission_state = {}
+	var lost := Data.mission_loss(_mission_entry_naq, int(Game.stats.naq), Settings.value("difficulty"))
+	Game.add_naq(-lost)
+	Game.heal_all()
+	Game.save_game()
 	clear_actions()
 	Audio.play("defeat")
 	say("SG-1", "Toute l'équipe est à terre ! On nous rapatrie !")
@@ -1434,13 +1645,9 @@ func _evacuate() -> void:
 	await wait(1.5)
 	await fade(Color(DARK, 1.0), 0.6).finished
 	_end_planet()
-	var lost := int(Game.stats.naq / 2)
-	Game.add_naq(-lost)
-	Game.heal_all()
-	Game.save_game()
 	set_camera(CAM_CONTROL, 0.0)
 	fade(Color(DARK, 0.0), 0.6)
-	say("DR FRAISER", "Vous revenez de loin, colonel. L'équipe a perdu %d naquadah dans la retraite." % lost)
+	say("DR FRAISER", "Vous revenez de loin, colonel. L'équipe a perdu %d naquadah sur les gains de cette sortie. Votre réserve de départ et votre expérience sont préservées." % lost)
 	await wait(2.5)
 	show_menu()
 
@@ -1461,8 +1668,6 @@ func _auto_explore() -> void:
 		if event_open:
 			break
 	await wait(4.0 if Cli.has("--fight") else 1.0)
-	if actions_box.get_child_count() > 0:
-		actions_box.get_child(0).pressed.emit()
 	if Cli.has("--fight"):
 		await wait(1.0)
 		if planet and planet.combat:
@@ -1494,3 +1699,119 @@ func _auto_explore() -> void:
 		await wait(1.0)
 		if actions_box.get_child_count() > 0:
 			actions_box.get_child(0).pressed.emit()
+
+
+# ---------- Sauvegarde d'opération ----------
+
+func capture_mission(allow_transition: bool = false) -> Dictionary:
+	if not planet:
+		return {}
+	if _restoring_session or (planet.input_locked and not allow_transition):
+		return Game.mission_state
+	var combat_state := {}
+	var reward := {}
+	var poi_index := _active_poi if event_open else -1
+	if planet.combat:
+		combat_state = planet.combat.snapshot()
+		poi_index = planet.pois.find(planet.combat.poi)
+		reward = {"xp": _reward.xp, "naq": _reward.naq}
+	return {"version": 1, "planet": current, "world": planet.snapshot(), "combat": combat_state,
+		"poi": poi_index, "reward": reward, "journal": log_lines.duplicate(true), "entry_naq": _mission_entry_naq}
+
+
+func save_checkpoint() -> bool:
+	if _restoring_session or not planet:
+		return false
+	return Game.save_game()
+
+
+func _valid_mission(state: Dictionary) -> bool:
+	if not state.has_all(["version", "planet", "world", "combat", "poi", "reward", "journal"]) or state.version != 1:
+		return false
+	if not state.world is Dictionary or not state.combat is Dictionary or not state.reward is Dictionary or int(state.planet) not in range(Data.PLANETS.size()):
+		return false
+	if not state.poi is int or state.poi < -1 or not state.journal is Array:
+		return false
+	for entry in state.journal:
+		if not entry is Array or entry.size() != 2 or not entry[0] is String or not entry[1] is String:
+			return false
+	var world: Dictionary = state.world
+	if not world.has_all(["seed", "members", "resolved", "seen", "leader", "path", "moving", "operation", "camera"]):
+		return false
+	if not world.members is Array or world.members.size() not in [4, 5] or not world.resolved is Array or not world.path is Array or not world.leader is Vector2i:
+		return false
+	if not world.operation is Dictionary or not world.seen is Array:
+		return false
+	for tile in world.path + world.seen:
+		if not tile is Vector2i or tile.x < 0 or tile.y < 0 or tile.x >= PlanetScript.N or tile.y >= PlanetScript.N:
+			return false
+	var names := []
+	for member in world.members:
+		if not member is Dictionary or not member.has_all(["kind", "position", "rotation"]) or not Data.MEMBERS.has(member.kind) or member.kind in names or not member.position is Vector3 or not member.rotation is Vector3:
+			return false
+		names.append(member.kind)
+	if not world.camera is Dictionary or not world.camera.has_all(["position", "yaw", "pitch", "distance"]) or not world.camera.position is Vector3:
+		return false
+	if not state.combat.is_empty():
+		if state.poi < 0 or not state.reward.has_all(["xp", "naq"]) or not state.combat.has_all(["units", "active", "target", "mode", "group", "clock", "work_kind", "work_progress", "level", "gear", "rng_seed", "rng"]):
+			return false
+		if not state.combat.units is Array or state.combat.units.size() < names.size():
+			return false
+		if state.combat.active < 0 or state.combat.active >= state.combat.units.size() or state.combat.target < -1 or state.combat.target >= state.combat.units.size():
+			return false
+		for unit in state.combat.units:
+			if not unit is Dictionary or not unit.has_all(["kind", "side", "hp", "hpmax", "alive", "tile", "position", "rotation", "rt_path", "cd", "stun", "fire_in"]):
+				return false
+			if not unit.tile is Vector2i or not unit.position is Vector3:
+				return false
+	return true
+
+
+func _continue_campaign() -> void:
+	if Game.mission_state.is_empty():
+		_leave_title()
+		return
+	var state: Dictionary = Game.mission_state.duplicate(true)
+	if not _valid_mission(state):
+		_leave_title()
+		hub.open("briefing")
+		hub.notice("Mission sauvegardée illisible ou incompatible. La progression de campagne reste disponible ; le fichier a été conservé.")
+		return
+	_close_title()
+	Audio.loop_stop("theme", 0.2)
+	Audio.loop_stop("horizon", 0.2)
+	hub.close()
+	current = int(state.planet)
+	start_planet(state)
+
+
+func _save_from_pause() -> void:
+	pause_menu.save_feedback(save_checkpoint())
+
+
+func _suspend_mission() -> void:
+	if not save_checkpoint():
+		pause_menu.save_feedback(false)
+		return
+	pause_menu.close()
+	_end_planet(false)
+	show_title()
+
+
+func _save_and_quit() -> void:
+	var ok := save_checkpoint() if planet else true
+	if ok:
+		get_tree().quit()
+	else:
+		if not pause_menu.visible:
+			pause_menu.open(title_lbl.text, planet != null, _can_abandon())
+		pause_menu.save_feedback(false)
+
+
+func _notification(what: int) -> void:
+	if not is_node_ready():
+		return
+	if what in [NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED] and planet:
+		save_checkpoint()
+	elif what == NOTIFICATION_WM_CLOSE_REQUEST:
+		_save_and_quit()

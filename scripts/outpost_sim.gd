@@ -1,5 +1,5 @@
 extends RefCounted
-## Simulation de l'escarmouche, indépendante de la campagne et de ses sauvegardes.
+## Simulation RTS et opération Dernière Veille, indépendantes de la campagne.
 ## Coordonnées en cases ; la vue 3D les multiplie par deux.
 
 signal notice(text: String)
@@ -12,6 +12,9 @@ const GATE := Vector2(4, 19)
 const DEPOSIT := Vector2(16, 12)
 const RUINS := Vector2(23, 18)
 const HQ_SITE := Vector2(8, 18)
+const EXTRACTION_GOAL := 30
+const Operation = preload("res://scripts/outpost_operation.gd")
+const LineOfFire = preload("res://scripts/line_of_fire.gd")
 const PROFILES := {
 	"balanced": {"name": "SG-1 · Équipe polyvalente", "hp": 90, "damage": 10, "vision": 6, "supplies": 320},
 	"assault": {"name": "SG-3 · Assaut", "hp": 110, "damage": 12, "vision": 5, "supplies": 260},
@@ -37,6 +40,7 @@ const SPECIALISTS := {
 var entities: Array[Dictionary] = []
 var supplies := 320.0
 var naquadah := 0.0
+var extracted_naquadah := 0.0 # Production cumulée de la mine, indépendante du stock et des ruines.
 var elapsed := 0.0
 var raid_in := 100.0
 var wave := 0
@@ -70,6 +74,49 @@ var _transit_clock := 0.0
 var squads := {1: [], 2: [], 3: []}
 var ruins_study := 0.0
 var ruins_studied := false
+var operation: Dictionary = {}
+const SAVE_FIELDS := ["entities", "supplies", "naquadah", "extracted_naquadah", "elapsed", "raid_in", "wave", "gate_in", "result", "deposit_found", "ruins_found", "researched", "_next_id", "_income_clock", "visible_cells", "explored_cells", "known_buildings", "camp_found", "vision_revision", "_vision_clock", "phase", "difficulty", "profile", "arrival_clock", "landing_scanned", "gate_hold", "gate_job", "_arrival_spawned", "_deployment_arrived", "_had_hq", "_transit_queue", "_transit_clock", "squads", "ruins_study", "ruins_studied"]
+
+func snapshot() -> Dictionary:
+	var data := {"version": 1, "operation": operation.duplicate(true)}
+	for key in SAVE_FIELDS:
+		data[key] = get(key)
+	return data.duplicate(true)
+
+static func from_snapshot(data: Dictionary) -> RefCounted:
+	if data.get("version", 0) != 1:
+		return null
+	for key in SAVE_FIELDS:
+		if not data.has(key):
+			return null
+	if not data.entities is Array or data.entities.is_empty() or data.profile not in PROFILES or data.difficulty not in ["easy", "normal", "hard"]:
+		return null
+	for entity in data.entities:
+		if not entity is Dictionary or not entity.has_all(["id", "kind", "pos", "hp", "side", "path"]) or not entity.pos is Vector2:
+			return null
+	if not data.get("operation", {}) is Dictionary or (not data.get("operation", {}).is_empty() and not Operation.valid(data.operation)):
+		return null
+	var sim = load("res://scripts/outpost_sim.gd").new({"difficulty": data.difficulty, "profile": data.profile})
+	for key in SAVE_FIELDS:
+		if key == "entities":
+			sim.entities.assign(data.entities.duplicate(true))
+		elif key == "_transit_queue":
+			sim._transit_queue.assign(data._transit_queue)
+		else:
+			sim.set(key, data[key])
+	sim.operation = data.get("operation", {}).duplicate(true)
+	for x in SIZE.x:
+		for y in SIZE.y:
+			sim.grid.set_point_solid(Vector2i(x, y), false)
+	for area in TERRAIN:
+		for x in range(area.position.x, area.end.x):
+			for y in range(area.position.y, area.end.y):
+				sim.grid.set_point_solid(Vector2i(x, y), true)
+	for entity in sim.entities:
+		if entity.hp > 0 and sim.is_building(entity):
+			sim.grid.set_point_solid(Vector2i(entity.pos), true)
+	sim.update_visibility()
+	return sim
 
 
 func _init(options: Dictionary = {}) -> void:
@@ -79,6 +126,8 @@ func _init(options: Dictionary = {}) -> void:
 	profile = str(options.get("profile", "balanced"))
 	if not PROFILES.has(profile):
 		profile = "balanced"
+	if options.get("operation", false):
+		operation = Operation.fresh()
 	supplies = PROFILES[profile].supplies
 	raid_in = {"easy": 130.0, "normal": 100.0, "hard": 80.0}[difficulty]
 	grid.region = Rect2i(Vector2i.ZERO, SIZE)
@@ -93,6 +142,9 @@ func _init(options: Dictionary = {}) -> void:
 	_add("camp", "enemy", Vector2(27, 5))
 	for p in [Vector2(25, 8), Vector2(28, 8), Vector2(18, 11)]:
 		_add("jaffa", "enemy", p)
+	if not operation.is_empty():
+		for point in [Vector2(18, 6), Vector2(20, 5), Vector2(28, 15), Vector2(27, 17), Vector2(24, 17), Vector2(3, 2), Vector2(6, 2), Vector2(8, 1)]:
+			_add("jaffa", "enemy", point)
 	# Only test/preview harnesses may request the former already-established start.
 	if options.get("established", false):
 		phase = "base"
@@ -137,11 +189,11 @@ func request_deployment() -> bool:
 
 
 func gate_busy() -> bool:
-	return phase == "arrival" or gate_in > 0 or gate_hold > 0 or not _transit_queue.is_empty()
+	return (not operation.is_empty() and operation.stage == "evacuation") or phase == "arrival" or gate_in > 0 or gate_hold > 0 or not _transit_queue.is_empty()
 
 
 func gate_open() -> bool:
-	return (phase == "arrival" and arrival_clock >= 1.8) or (gate_in > 0 and gate_in <= 3) or gate_hold > 0 or not _transit_queue.is_empty()
+	return (not operation.is_empty() and operation.stage == "evacuation" and operation.outbound_clock >= 2.0) or (phase == "arrival" and arrival_clock >= 1.8) or (gate_in > 0 and gate_in <= 3) or gate_hold > 0 or not _transit_queue.is_empty()
 
 
 func skip_arrival() -> void:
@@ -362,6 +414,8 @@ func power() -> Vector2i:
 		var p: int = BUILDINGS[e.kind].power
 		used += maxi(p, 0)
 		capacity += maxi(-p, 0)
+	if not operation.is_empty():
+		capacity += (4 if researched else 0) + (8 if operation.backup > 0 else 0)
 	return Vector2i(used, capacity)
 
 
@@ -375,6 +429,10 @@ func build_error(kind: String, pos: Vector2) -> String:
 		return "Construction indisponible."
 	if phase != "base":
 		return "Sécurisez la zone et attendez l'installation du commandement par les ingénieurs."
+	if not operation.is_empty() and operation.stage in ["evacuation", "complete"]:
+		return "Rapatriement en cours : aucun nouveau chantier."
+	if not operation.is_empty() and count("engineer") == 0:
+		return "Appelez un ingénieur du SGC pour assembler le module."
 	if supplies < BUILDINGS[kind].cost:
 		return "Ravitaillement insuffisant."
 	if kind == "hq" and count("hq", false) > 0:
@@ -419,6 +477,15 @@ func build(kind: String, pos: Vector2) -> bool:
 		return false
 	supplies -= BUILDINGS[kind].cost
 	_add(kind, "sgc", pos, BUILDINGS[kind].time)
+	if not operation.is_empty():
+		var nearest := {}
+		var distance := INF
+		for e in entities:
+			if e.kind == "engineer" and e.hp > 0 and e.pos.distance_to(pos) < distance:
+				nearest = e
+				distance = e.pos.distance_to(pos)
+		if not nearest.is_empty():
+			_route(nearest, pos)
 	notice.emit("Construction : %s." % BUILDINGS[kind].name)
 	return true
 
@@ -493,9 +560,22 @@ func repair(id: int) -> bool:
 	return true
 
 
+func reinforce_error() -> String:
+	if result != "" or phase != "base" or count("hq") == 0:
+		return "Commandement opérationnel requis."
+	if gate_busy():
+		return "Porte occupée : attendez la fin de la liaison."
+	if supplies < 85:
+		return "85 ravitaillements requis."
+	var limit := 20 if operation.is_empty() else 12
+	if count("soldier") + 3 > limit:
+		return "Capacité logistique : %d militaires maximum, renforts par groupes de trois." % limit
+	return ""
+
 func reinforce() -> bool:
-	if result != "" or phase != "base" or gate_busy() or supplies < 85 or count("hq") == 0 or count("soldier") > 17:
-		notice.emit("Renforts : 85 ravitaillement, commandement actif, porte libre et moins de 18 soldats requis.")
+	var error := reinforce_error()
+	if error != "":
+		notice.emit(error)
 		return false
 	supplies -= 85
 	gate_in = 18.0
@@ -505,6 +585,14 @@ func reinforce() -> bool:
 
 
 func research() -> bool:
+	if not operation.is_empty():
+		if result != "" or researched or count("lab") == 0 or not powered() or naquadah < 80:
+			notice.emit("Régulation : laboratoire alimenté et 80 naquadah conditionnés requis.")
+			return false
+		naquadah -= 80
+		researched = true
+		Operation.mark(self, "Régulation optimisée : +4 énergie et intervention sur relais 25 % plus rapide. Aucun bonus de dégâts.")
+		return true
 	if result != "" or researched or count("lab") == 0 or not powered() or naquadah < 30:
 		notice.emit("Recherche : laboratoire alimenté et 30 naquadah requis.")
 		return false
@@ -573,15 +661,19 @@ func tick(delta: float) -> void:
 		_income_clock -= 1.0
 		supplies += 4 if count("hq") > 0 else 0
 		if powered():
-			naquadah += count("mine") * 2
+			var produced := count("mine") * (2 if operation.is_empty() else 1)
+			naquadah += produced
+			extracted_naquadah += produced
 			for e in entities:
 				if e.side == "sgc" and not is_building(e) and e.hp > 0:
 					for b in entities:
 						if b.kind == "infirmary" and b.hp > 0 and b.build <= 0 and e.pos.distance_to(b.pos) < 5:
 							e.hp = minf(e.max_hp, e.hp + 5)
-	if phase == "base":
+	if phase == "base" and not operation.is_empty():
+		Operation.raid_tick(self, delta)
+	if phase == "base" and operation.is_empty():
 		raid_in -= delta
-	if phase == "base" and raid_in <= 0 and count("camp") > 0:
+	if phase == "base" and operation.is_empty() and raid_in <= 0 and count("camp") > 0:
 		wave += 1
 		raid_in = maxf(45, 90 - wave * 5)
 		for i in mini(2 + wave, 7):
@@ -593,6 +685,8 @@ func tick(delta: float) -> void:
 		if e.hp <= 0:
 			continue
 		if e.build > 0:
+			if not operation.is_empty() and not Operation.near(self, "engineer", e.pos, 3):
+				continue
 			if e.kind == "hq" and phase == "establish" and not _engineer_near(3):
 				continue
 			e.build = maxf(0, e.build - delta)
@@ -621,9 +715,11 @@ func tick(delta: float) -> void:
 	elif _deployment_arrived and phase in ["deployment", "establish"] and count("engineer") == 0 and _transit_queue.is_empty():
 		result = "defeat"
 		notice.emit("DÉPLOIEMENT PERDU · Les ingénieurs ont été éliminés avant la fin du chantier.")
-	elif count("camp") == 0 and count("mine") > 0:
+	elif operation.is_empty() and count("camp") == 0 and extracted_naquadah >= EXTRACTION_GOAL:
 		result = "victory"
 		notice.emit("PLANÈTE SÉCURISÉE · Gisement exploité et camp goa'uld neutralisé !")
+	if not operation.is_empty():
+		Operation.tick(self, delta)
 	# Retire aussi les entités de la simulation pour éviter une croissance illimitée.
 	entities = entities.filter(func(e): return e.hp > 0)
 
@@ -640,9 +736,12 @@ func _step_entity(e: Dictionary, delta: float) -> void:
 	if e.kind in ["soldier", "scientist"]:
 		if not ruins_found and e.pos.distance_to(RUINS) < 3:
 			ruins_found = true
-			naquadah += 30
-			supplies += 75
-			notice.emit("Ruines explorées : +30 naquadah et +75 ravitaillement.")
+			if operation.is_empty():
+				naquadah += 30
+				supplies += 75
+				notice.emit("Ruines explorées : +30 naquadah et +75 ravitaillement.")
+			else:
+				notice.emit("Archives localisées. Un scientifique escorté et un laboratoire alimenté permettront leur étude.")
 	if e.side == "sgc" and e.path.is_empty():
 		_specialist_work(e, delta)
 	var armed: bool = e.kind in ["soldier", "jaffa", "turret", "camp"]
@@ -657,23 +756,21 @@ func _step_entity(e: Dictionary, delta: float) -> void:
 		# On rejoint la dernière position connue sans poursuivre une cible invisible.
 		e.target = -1
 		foe = {}
-	# Un ordre de déplacement garde la priorité ; les soldats tirent en marchant.
-	if foe.is_empty() or e.pos.distance_to(foe.pos) > reach:
-		var nearest := reach
-		for other in entities:
-			if other.hp > 0 and other.side != e.side and (e.side == "enemy" or entity_visible(other)):
-				var distance: float = e.pos.distance_to(other.pos)
-				if distance <= nearest:
-					nearest = distance
-					foe = other
-	var in_range: bool = not foe.is_empty() and e.pos.distance_to(foe.pos) <= reach
+	# Les tirs automatiques partagent les mêmes règles que le diagnostic de défense.
+	foe = firing_target(e, reach)
+	var in_range: bool = not foe.is_empty() and e.pos.distance_to(foe.pos) <= reach and line_of_fire(e.pos, foe.pos)
 	if armed and in_range and e.cooldown <= 0:
 		e.cooldown = 0.85 if e.kind == "soldier" else 1.3
 		var damage: float = PROFILES[profile].damage if e.kind == "soldier" else 14.0
 		if e.side == "enemy":
 			damage *= {"easy": 0.75, "normal": 1.0, "hard": 1.25}[difficulty]
-		if e.side == "sgc" and researched:
+		if e.side == "sgc" and researched and operation.is_empty():
 			damage *= 1.4
+		if not operation.is_empty():
+			if foe.kind == "camp" and operation.stage in ["archives", "relays"]:
+				damage = 0.0
+			if e.kind == "camp" and operation.relays[1] >= Operation.RELAY_TIME:
+				damage *= 0.6
 		foe.hp -= damage
 		shot.emit(e.pos, foe.pos, e.side == "enemy")
 		hit.emit(foe.id, damage, foe.hp <= 0)
@@ -684,7 +781,7 @@ func _step_entity(e: Dictionary, delta: float) -> void:
 		return
 	var explicit_target := entity(e.target)
 	if not explicit_target.is_empty():
-		if e.pos.distance_to(explicit_target.pos) <= reach:
+		if e.pos.distance_to(explicit_target.pos) <= reach and line_of_fire(e.pos, explicit_target.pos):
 			e.moving = false
 			return
 		if e.path.is_empty():
@@ -703,6 +800,10 @@ func _step_entity(e: Dictionary, delta: float) -> void:
 	e.moving = true
 	if e.pos.distance_to(next) < 0.02:
 		e.path.pop_front()
+
+
+func line_of_fire(from: Vector2, to: Vector2) -> bool:
+	return LineOfFire.clear(from, to, func(tile: Vector2i): return grid.is_in_boundsv(tile) and grid.is_point_solid(tile))
 
 
 func _specialist_work(e: Dictionary, delta: float) -> void:
@@ -726,7 +827,7 @@ func _specialist_work(e: Dictionary, delta: float) -> void:
 				b.hp += amount
 				supplies = maxf(0, supplies - amount / 5.0)
 				break
-	elif e.kind == "scientist" and not ruins_studied and e.pos.distance_to(RUINS) < 3:
+	elif operation.is_empty() and e.kind == "scientist" and not ruins_studied and e.pos.distance_to(RUINS) < 3:
 		# Un seul chercheur fait progresser l'étude, quel que soit l'effectif envoyé.
 		for other in entities:
 			if other.id < e.id and other.kind == "scientist" and other.side == "sgc" and other.hp > 0 and other.path.is_empty() and other.pos.distance_to(RUINS) < 3:
@@ -737,3 +838,49 @@ func _specialist_work(e: Dictionary, delta: float) -> void:
 			naquadah += 50
 			supplies += 100
 			notice.emit("Étude des Anciens terminée : +50 naquadah et +100 ravitaillement.")
+
+
+func operation_action(action: String) -> bool:
+	return Operation.act(self, action) if not operation.is_empty() else false
+
+func operation_error(action: String) -> String:
+	return Operation.action_error(self, action) if not operation.is_empty() else "Pas d'opération active."
+
+func research_label() -> String:
+	if not operation.is_empty():
+		return "Régulation optimisée ✓" if researched else "Régulation · 80 N"
+	return "Munitions améliorées ✓" if researched else "Munitions +40 % · 30 N"
+
+
+func firing_target(e: Dictionary, reach: float) -> Dictionary:
+	var explicit := entity(e.target)
+	if not explicit.is_empty() and explicit.side != e.side and (e.side == "enemy" or entity_visible(explicit)) and e.pos.distance_to(explicit.pos) <= reach and line_of_fire(e.pos, explicit.pos):
+		return explicit
+	var target := {}
+	var nearest := reach
+	for other in entities:
+		if other.hp <= 0 or other.side == e.side or (e.side == "sgc" and not entity_visible(other)):
+			continue
+		var distance: float = e.pos.distance_to(other.pos)
+		if distance <= nearest and line_of_fire(e.pos, other.pos):
+			nearest = distance
+			target = other
+	return target
+
+func turret_status(e: Dictionary) -> Dictionary:
+	if e.build > 0:
+		return {"state": "construction", "text": "ASSEMBLAGE EN COURS"}
+	if not powered():
+		return {"state": "power", "text": "HORS SERVICE · ÉNERGIE INSUFFISANTE"}
+	var target := firing_target(e, 5.5)
+	if not target.is_empty():
+		if target.kind == "camp" and not operation.is_empty() and operation.stage in ["archives", "relays"]:
+			return {"state": "shield", "text": "CIBLE PROTÉGÉE · COUPER LES RELAIS"}
+		return {"state": "target", "text": "CIBLE ACQUISE · TIR AUTOMATIQUE"}
+	var visible_enemy := false
+	for other in entities:
+		if other.side == "enemy" and entity_visible(other):
+			visible_enemy = true
+			if e.pos.distance_to(other.pos) <= 5.5:
+				return {"state": "blocked", "text": "TIR BLOQUÉ · OBSTACLE"}
+	return {"state": "range" if visible_enemy else "idle", "text": "VEILLE · ENNEMI HORS PORTÉE" if visible_enemy else "VEILLE · AUCUNE CIBLE"}

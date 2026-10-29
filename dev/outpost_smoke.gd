@@ -19,6 +19,7 @@ func check(ok: bool, text: String) -> void:
 func _ready() -> void:
 	var campaign: Dictionary = Game.stats.duplicate(true)
 	var view := Outpost.new()
+	view.persistence_enabled = false
 	view.sim = Sim.new({"established": true})
 	add_child(view)
 	await get_tree().process_frame

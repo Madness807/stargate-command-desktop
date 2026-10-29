@@ -165,7 +165,16 @@ func _test_results() -> void:
 	check(s.result == "", "camp seul insuffisant pour gagner")
 	s._add("mine", "sgc", Sim.DEPOSIT)
 	s.tick(0.1)
-	check(s.result == "victory", "victoire avec extracteur et camp détruit")
+	check(s.result == "" and s.extracted_naquadah == 0, "mine sans énergie : pas d'extraction ni de victoire")
+	s.naquadah += 80 # Butin ou recherche des ruines : ne doit pas valider le gisement.
+	advance(s, 2)
+	check(s.result == "" and s.extracted_naquadah == 0, "stock issu des ruines exclu de l'objectif")
+	s._add("generator", "sgc", Vector2(10, 18))
+	advance(s, 5)
+	check(s.result == "" and s.extracted_naquadah > 0, "production partielle : objectif encore incomplet")
+	s.naquadah = 0 # Une dépense ne remet pas la production cumulée à zéro.
+	advance(s, 12)
+	check(s.result == "victory" and s.extracted_naquadah >= Sim.EXTRACTION_GOAL, "victoire après extraction réelle, même si du naquadah a été dépensé")
 	var before: float = s.elapsed
 	s.tick(10)
 	check(s.elapsed == before and not s.reinforce(), "simulation et commandes arrêtées après victoire")
@@ -173,6 +182,26 @@ func _test_results() -> void:
 	find(lost, "hq").hp = 0
 	lost.tick(0.1)
 	check(lost.result == "defeat", "défaite si commandement perdu")
+	var sight := established()
+	check(not sight.line_of_fire(Vector2(1, 5), Vector2(8, 5)) and not sight.line_of_fire(Vector2(8, 5), Vector2(1, 5)), "massif RTS : tirs bloqués des deux côtés")
+	check(sight.line_of_fire(Vector2(1, 8), Vector2(6, 8)), "couloir RTS dégagé")
+	var wall: Dictionary = sight._add("generator", "sgc", Vector2(10, 18))
+	check(not sight.line_of_fire(Vector2(9, 18), Vector2(11, 18)), "bâtiment intermédiaire bloque le tir")
+	wall.hp = 0
+	sight.grid.set_point_solid(Vector2i(10, 18), false)
+	check(sight.line_of_fire(Vector2(9, 18), Vector2(11, 18)), "destruction du bâtiment libère le tir")
+	var shooter: Dictionary = sight._add("soldier", "sgc", Vector2(6, 10))
+	var opponent: Dictionary = sight._add("jaffa", "enemy", Vector2(9, 10))
+	var initial_hp: float = shooter.hp
+	var enemy_hp: float = opponent.hp
+	sight.update_visibility()
+	sight._step_entity(shooter, 1.0)
+	sight._step_entity(opponent, 1.0)
+	check(shooter.hp == initial_hp and opponent.hp == enemy_hp, "soldat et Jaffa ne tirent pas au travers du massif à portée")
+	opponent.pos = Vector2(6, 7)
+	sight.update_visibility()
+	sight._step_entity(shooter, 1.0)
+	check(opponent.hp < enemy_hp, "tir réel possible après dégagement de la ligne")
 
 
 func _test_visibility() -> void:

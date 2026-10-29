@@ -20,7 +20,15 @@ La campagne et la base du SGC restent le parcours principal : accueil → contin
 
 ## Limites actuelles
 
-La campagne conserve ses six planètes, toutes jouées avec des combats en temps réel. La construction d'avant-poste reste propre à l'expédition P3X-742. Les expéditions n'ont pas encore de sauvegarde ; cette limite est indiquée avant le déploiement et avant l'abandon.
+La campagne conserve ses six planètes, toutes jouées avec des combats en temps réel. La construction d'avant-poste reste propre à l'expédition P3X-742. Campagne et expédition disposent chacune d'une sauvegarde d'opération ; la reprise se fait en pause.
+
+## Corrections de règles issues de l'audit
+
+La traduction de Daniel ne réduit les dégâts d'un gardien qu'une fois par combat, de 25 % avec arrondi à l'entier le plus proche. Les utilisations suivantes conservent la diversion sur les gardes, sans cumuler l'affaiblissement du boss.
+
+L’ancien scénario, conservé pour reprendre les sauvegardes existantes, demande la destruction du camp et 30 unités de naquadah réellement produites par un extracteur alimenté. La production cumulée est distincte du stock : les ruines ne comptent pas, et dépenser du naquadah ne fait pas régresser l'objectif. Le HUD affiche ce compteur. Le premier raid se prépare 130/100/80 secondes après la mise en service du commandement selon la difficulté ; reconnaissance et installation n'écoulent pas ce délai.
+
+Les tirs de campagne et d'expédition utilisent la même traversée de grille. Les bâtiments et massifs de l'expédition bloquent les tirs. En campagne, les bâtiments et décors hauts sont opaques ; les objets bas donnent un couvert sans bloquer entièrement. Les deux camps respectent cette règle, y compris aux coins. Les grenades conservent leur trajectoire en cloche et leurs dégâts de zone.
 
 ## Finition de la porte et du décor
 
@@ -36,9 +44,9 @@ Test complémentaire : `res://dev/imported_gate_tests.tscn`.
 
 ## Correction campagne complète
 
-Le choix du moteur dans main.gd ne dépend plus de l'indice de planète : toutes les missions utilisent RealtimeCombat. Les contacts ordinaires et les gardiens démarrent directement le combat. Le HUD et le briefing ne proposent plus d'alternance de tours ; sélection et déplacement n'exigent aucun point d'action. La pause tactique permet de donner des ordres, et l'abandon suspend le combat avant la transition. Le recrutement de Bra'tac ne modifie pas rétroactivement les membres déjà déployés.
+Toutes les missions utilisent le moteur autonome `combat_realtime.gd`. Les contacts ordinaires et les gardiens démarrent directement le combat. Déplacements et tirs avancent simultanément ; recharges et étourdissements sont exprimés en secondes. La pause tactique permet de donner des ordres, et l'abandon suspend le combat avant la transition. Le recrutement de Bra'tac ne modifie pas rétroactivement les membres déjà déployés.
 
-`res://dev/campaign_realtime_tests.tscn` vérifie les 24 rencontres et gardiens des six mondes : moteur réellement instancié par le déclencheur, tirs simultanés, déplacement au-delà de quatre cases, ordres en pause, portraits sans PA, résultats et progression, sans écrire la sauvegarde utilisateur.
+`res://dev/campaign_realtime_tests.tscn` vérifie les 24 rencontres et gardiens des six mondes : moteur réellement instancié par le déclencheur, tirs simultanés, déplacements longs, ordres en pause, sélection immédiate, résultats et progression, sans écrire la sauvegarde utilisateur.
 
 ## Trois modèles communautaires supplémentaires
 
@@ -57,3 +65,16 @@ Les neuf boîtiers du modèle sont séparés par secteur en conservant leurs mat
 L’iris utilise vingt feuilles courbes chevauchantes, pivotant derrière la couronne. Son matériau découpe les parties rangées hors de l’ouverture. Une commande inverse reprend la position courante au lieu de faire sauter l’animation.
 
 Validation : `res://dev/gate_mechanics_tests.tscn`, `res://dev/imported_gate_tests.tscn`, `res://dev/title_gate_tests.tscn`. Contrôle visuel : `./start.sh res://dev/iris_visual.tscn` (captures `/tmp/sg1-iris-*.png`).
+
+## Nettoyage du moteur de campagne
+
+Le moteur temps réel hérite directement de Node3D. Les unités ne contiennent aucune réserve d’actions ou de déplacement ; il n’existe aucun cycle de tours ni verrou d’animation bloquant les ordres. `combat_stats.gd` partage les mêmes caractéristiques entre briefing et simulation, ajustées à la difficulté. Les anciens scores de puissance indépendants des règles ont été supprimés. Les seules issues de combat sont victoire, défaite et repli. Les tests contrôlent les échanges simultanés, les ordres pendant la pause, les délais en secondes et l’émission unique du résultat.
+
+
+## Dernière Veille — nouvelles expéditions
+
+Les nouvelles parties lancées depuis la préparation jouent désormais l’opération **Dernière Veille**, une histoire originale située pendant la saison 3 après l’échange avec Orban. Sept étapes : franchissement, tête de pont, archives, relais, camp, transmission et rapatriement. Un détour facultatif permet de secourir SG-11 et de récupérer ses renseignements radio.
+
+Les modules nécessitent un ingénieur sur place ; les renforts arrivent du SGC. La destruction du camp ne donne pas la victoire : les données et les survivants doivent rentrer par une liaison sortante, incompatible avec les transports entrants. Le naquadah conditionné sert aux générateurs de terrain, au secours électrique et à la régulation, sans bonus de dégâts.
+
+Voir [LAST-WATCH.md](LAST-WATCH.md) pour les règles, la compatibilité des sauvegardes et les vérifications.

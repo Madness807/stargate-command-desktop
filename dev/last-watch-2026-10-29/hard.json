@@ -1,0 +1,616 @@
+{
+	"checks": 13,
+	"difficulty": "hard",
+	"events": [
+		{
+			"text": "Première équipe arrivée. Reconnaissez la clairière balisée et sécurisez le périmètre avant d'appeler le SGC.",
+			"time": 7.6
+		},
+		{
+			"text": "SGC : déploiement autorisé. Deux ingénieurs et le matériel franchiront la porte dans 12 secondes.",
+			"time": 14.3
+		},
+		{
+			"text": "SGC : personnel et matériel arrivés. Gardez les ingénieurs près du chantier.",
+			"time": 27.2
+		},
+		{
+			"text": "Les ingénieurs installent le commandement. Protégez le chantier.",
+			"time": 27.2
+		},
+		{
+			"text": "Commandement opérationnel.",
+			"time": 40.5
+		},
+		{
+			"text": "Avant-poste opérationnel. Construction, ravitaillement et renforts militaires disponibles.",
+			"time": 40.5
+		},
+		{
+			"text": "Hammond : opération Dernière Veille engagée. Établissez un laboratoire, exploitez le gisement et escortez un scientifique vers les ruines à l'est. Une balise SG-11 émet au nord-ouest : sauvetage facultatif, renseignements radio à récupérer.",
+			"time": 40.5
+		},
+		{
+			"text": "Construction : Générateur.",
+			"time": 40.7
+		},
+		{
+			"text": "SGC : trois soldats en préparation. Arrivée dans 18 secondes.",
+			"time": 40.7
+		},
+		{
+			"text": "Générateur opérationnel.",
+			"time": 51.1
+		},
+		{
+			"text": "Construction : Tourelle.",
+			"time": 51.7
+		},
+		{
+			"text": "SGC : renforts arrivés par la porte.",
+			"time": 60.4
+		},
+		{
+			"text": "Tourelle opérationnel.",
+			"time": 62.4
+		},
+		{
+			"text": "Construction : Infirmerie.",
+			"time": 62.7
+		},
+		{
+			"text": "Infirmerie opérationnel.",
+			"time": 75.2
+		},
+		{
+			"text": "Construction : Laboratoire.",
+			"time": 75.9
+		},
+		{
+			"text": "SGC : Médecin en préparation · 10 secondes.",
+			"time": 85.8
+		},
+		{
+			"text": "Laboratoire opérationnel.",
+			"time": 89.6
+		},
+		{
+			"text": "Renseignement : AXE NORD → le générateur. Entrée dans le secteur dans 30 secondes. Interceptez la colonne ou défendez sa cible.",
+			"time": 90.6
+		},
+		{
+			"text": "Construction : Générateur.",
+			"time": 92.4
+		},
+		{
+			"text": "SGC : renforts arrivés par la porte.",
+			"time": 95.9
+		},
+		{
+			"text": "Générateur opérationnel.",
+			"time": 103.5
+		},
+		{
+			"text": "Construction : Tourelle.",
+			"time": 107.8
+		},
+		{
+			"text": "Colonne ennemie engagée : AXE NORD → le générateur · 3 Jaffas.",
+			"time": 120.6
+		},
+		{
+			"text": "Tourelle opérationnel.",
+			"time": 120.7
+		},
+		{
+			"text": "Gisement repéré. Éliminez les gardes puis placez un extracteur.",
+			"time": 120.7
+		},
+		{
+			"text": "Construction : Tourelle.",
+			"time": 124.3
+		},
+		{
+			"text": "Tourelle opérationnel.",
+			"time": 134.7
+		},
+		{
+			"text": "Construction : Extracteur.",
+			"time": 147.4
+		},
+		{
+			"text": "Archives localisées. Un scientifique escorté et un laboratoire alimenté permettront leur étude.",
+			"time": 152.5
+		},
+		{
+			"text": "Extracteur opérationnel.",
+			"time": 160.8
+		},
+		{
+			"text": "SGC : Scientifique en préparation · 10 secondes.",
+			"time": 172.7
+		},
+		{
+			"text": "SGC : renforts arrivés par la porte.",
+			"time": 182.8
+		},
+		{
+			"text": "Renseignement : AXE EST → l'extracteur. Entrée dans le secteur dans 30 secondes. Interceptez la colonne ou défendez sa cible.",
+			"time": 185.7
+		},
+		{
+			"text": "SGC : trois soldats en préparation. Arrivée dans 18 secondes.",
+			"time": 193.6
+		},
+		{
+			"text": "SGC : renforts arrivés par la porte.",
+			"time": 213.3
+		},
+		{
+			"text": "SGC : trois soldats en préparation. Arrivée dans 18 secondes.",
+			"time": 215.6
+		},
+		{
+			"text": "Colonne ennemie engagée : AXE EST → l'extracteur · 3 Jaffas.",
+			"time": 215.7
+		},
+		{
+			"text": "SGC : renforts arrivés par la porte.",
+			"time": 235.3
+		},
+		{
+			"text": "Jackson : les archives décrivent deux relais récupérés par les Goa'ulds. Coupez-les avec nos générateurs de terrain. Nord : réduit les renforts ; est : retarde les colonnes et affaiblit l'armement du camp.",
+			"time": 259.7
+		},
+		{
+			"text": "Générateur de terrain déployé sur le relais nord. Protégez l'ingénieur pendant 45 secondes.",
+			"time": 265.1
+		},
+		{
+			"text": "Renseignement : AXE NORD → le commandement. Entrée dans le secteur dans 30 secondes. Interceptez la colonne ou défendez sa cible.",
+			"time": 280.8
+		},
+		{
+			"text": "Relais nord neutralisé. Les colonnes perdent un renfort.",
+			"time": 310.1
+		},
+		{
+			"text": "Colonne ennemie engagée : AXE NORD → le commandement · 3 Jaffas.",
+			"time": 310.8
+		},
+		{
+			"text": "Camp goa'uld localisé. Sa position est enregistrée sur la carte.",
+			"time": 313.2
+		},
+		{
+			"text": "SGC : Médecin en préparation · 10 secondes.",
+			"time": 316.8
+		},
+		{
+			"text": "Générateur de terrain déployé sur le relais est. Protégez l'ingénieur pendant 45 secondes.",
+			"time": 317.9
+		},
+		{
+			"text": "Extracteur réparé · 21 ravitaillements.",
+			"time": 322.3
+		},
+		{
+			"text": "Extracteur réparé · 21 ravitaillements.",
+			"time": 325.6
+		},
+		{
+			"text": "SGC : renforts arrivés par la porte.",
+			"time": 326.9
+		},
+		{
+			"text": "Relais est neutralisé. Prochaine colonne retardée de 45 s ; armement du camp affaibli de 40 %.",
+			"time": 362.9
+		},
+		{
+			"text": "Carter : bouclier du camp coupé. Lancez l'assaut ; gardez une défense et un scientifique en vie pour récupérer les archives.",
+			"time": 362.9
+		},
+		{
+			"text": "Bâtiment détruit : camp goa'uld.",
+			"time": 375.2
+		},
+		{
+			"text": "Camp neutralisé. Les réserves du secteur convergent : deux dernières colonnes. Ramenez un scientifique aux ruines et protégez la transmission pendant 90 secondes.",
+			"time": 375.2
+		},
+		{
+			"text": "Renseignement : AXE EST → l'équipe scientifique. Entrée dans le secteur dans 30 secondes. Interceptez la colonne ou défendez sa cible.",
+			"time": 390.2
+		},
+		{
+			"text": "Colonne ennemie engagée : AXE EST → l'équipe scientifique · 3 Jaffas.",
+			"time": 420.2
+		},
+		{
+			"text": "SGC : Ingénieur en préparation · 10 secondes.",
+			"time": 423.5
+		},
+		{
+			"text": "SGC : renforts arrivés par la porte.",
+			"time": 433.6
+		},
+		{
+			"text": "Archives copiées sur les terminaux de terrain. Escortez un scientifique jusqu'au commandement pour valider les données et préparer le retour.",
+			"time": 468.8
+		},
+		{
+			"text": "Données validées. Rassemblez le personnel près de la porte puis ouvrez une liaison sortante vers le SGC. Les installations resteront sur place.",
+			"time": 476.4
+		},
+		{
+			"text": "SGC : composition vers la Terre engagée. Tous les survivants rejoignent la porte. Aucun renfort entrant pendant le rapatriement.",
+			"time": 480.7
+		},
+		{
+			"text": "DERNIÈRE VEILLE ACCOMPLIE · Archives récupérées, bouclier neutralisé et 15 personnes rapatriées au SGC.",
+			"time": 484.7
+		}
+	],
+	"failures": 0,
+	"operation": {
+		"backup": 0.0,
+		"base_time": 444.300000000033,
+		"blocked": "",
+		"charged": [
+			true,
+			true
+		],
+		"evacuated": 15,
+		"final_raids": 1,
+		"history": [
+			{
+				"text": "Hammond : opération Dernière Veille engagée. Établissez un laboratoire, exploitez le gisement et escortez un scientifique vers les ruines à l'est. Une balise SG-11 émet au nord-ouest : sauvetage facultatif, renseignements radio à récupérer.",
+				"time": 40.5000000000003
+			},
+			{
+				"text": "Renseignement : AXE NORD → le générateur. Entrée dans le secteur dans 30 secondes. Interceptez la colonne ou défendez sa cible.",
+				"time": 90.5999999999991
+			},
+			{
+				"text": "Colonne ennemie engagée : AXE NORD → le générateur · 3 Jaffas.",
+				"time": 120.599999999997
+			},
+			{
+				"text": "Renseignement : AXE EST → l'extracteur. Entrée dans le secteur dans 30 secondes. Interceptez la colonne ou défendez sa cible.",
+				"time": 185.699999999994
+			},
+			{
+				"text": "Colonne ennemie engagée : AXE EST → l'extracteur · 3 Jaffas.",
+				"time": 215.699999999992
+			},
+			{
+				"text": "Jackson : les archives décrivent deux relais récupérés par les Goa'ulds. Coupez-les avec nos générateurs de terrain. Nord : réduit les renforts ; est : retarde les colonnes et affaiblit l'armement du camp.",
+				"time": 259.699999999991
+			},
+			{
+				"text": "Générateur de terrain déployé sur le relais nord. Protégez l'ingénieur pendant 45 secondes.",
+				"time": 265.099999999992
+			},
+			{
+				"text": "Renseignement : AXE NORD → le commandement. Entrée dans le secteur dans 30 secondes. Interceptez la colonne ou défendez sa cible.",
+				"time": 280.799999999995
+			},
+			{
+				"text": "Relais nord neutralisé. Les colonnes perdent un renfort.",
+				"time": 310.100000000002
+			},
+			{
+				"text": "Colonne ennemie engagée : AXE NORD → le commandement · 3 Jaffas.",
+				"time": 310.800000000002
+			},
+			{
+				"text": "Générateur de terrain déployé sur le relais est. Protégez l'ingénieur pendant 45 secondes.",
+				"time": 317.900000000004
+			},
+			{
+				"text": "Relais est neutralisé. Prochaine colonne retardée de 45 s ; armement du camp affaibli de 40 %.",
+				"time": 362.900000000014
+			},
+			{
+				"text": "Carter : bouclier du camp coupé. Lancez l'assaut ; gardez une défense et un scientifique en vie pour récupérer les archives.",
+				"time": 362.900000000014
+			},
+			{
+				"text": "Camp neutralisé. Les réserves du secteur convergent : deux dernières colonnes. Ramenez un scientifique aux ruines et protégez la transmission pendant 90 secondes.",
+				"time": 375.200000000017
+			},
+			{
+				"text": "Renseignement : AXE EST → l'équipe scientifique. Entrée dans le secteur dans 30 secondes. Interceptez la colonne ou défendez sa cible.",
+				"time": 390.20000000002
+			},
+			{
+				"text": "Colonne ennemie engagée : AXE EST → l'équipe scientifique · 3 Jaffas.",
+				"time": 420.200000000027
+			},
+			{
+				"text": "Archives copiées sur les terminaux de terrain. Escortez un scientifique jusqu'au commandement pour valider les données et préparer le retour.",
+				"time": 468.800000000038
+			},
+			{
+				"text": "Données validées. Rassemblez le personnel près de la porte puis ouvrez une liaison sortante vers le SGC. Les installations resteront sur place.",
+				"time": 476.40000000004
+			},
+			{
+				"text": "SGC : composition vers la Terre engagée. Tous les survivants rejoignent la porte. Aucun renfort entrant pendant le rapatriement.",
+				"time": 480.700000000041
+			},
+			{
+				"text": "DERNIÈRE VEILLE ACCOMPLIE · Archives récupérées, bouclier neutralisé et 15 personnes rapatriées au SGC.",
+				"time": 484.700000000042
+			}
+		],
+		"id": "last_watch",
+		"initial_evac": 15,
+		"outbound_clock": 4.0,
+		"raid_number": 4,
+		"raid_point": "(30.0, 22.0)",
+		"raid_target": 36,
+		"relays": [
+			45.0,
+			45.0
+		],
+		"rescue_lost": false,
+		"rescue_released": false,
+		"rescue_returned": false,
+		"rescued_out": 0,
+		"scientists_out": 1,
+		"soldiers_out": 11,
+		"stage": "complete",
+		"study": 60.0,
+		"transfer": 90.0,
+		"warning": ""
+	},
+	"remaining": [
+		{
+			"build": 0.0,
+			"cooldown": 0.0,
+			"goal": "(3.0, 2.0)",
+			"hp": 90.0,
+			"id": 9,
+			"kind": "jaffa",
+			"max_hp": 90.0,
+			"moving": false,
+			"path": [],
+			"pos": "(3.0, 2.0)",
+			"side": "enemy",
+			"target": -1
+		},
+		{
+			"build": 0.0,
+			"cooldown": 0.0,
+			"goal": "(6.0, 2.0)",
+			"hp": 90.0,
+			"id": 10,
+			"kind": "jaffa",
+			"max_hp": 90.0,
+			"moving": false,
+			"path": [],
+			"pos": "(6.0, 2.0)",
+			"side": "enemy",
+			"target": -1
+		},
+		{
+			"build": 0.0,
+			"cooldown": 0.0,
+			"goal": "(8.0, 1.0)",
+			"hp": 90.0,
+			"id": 11,
+			"kind": "jaffa",
+			"max_hp": 90.0,
+			"moving": false,
+			"path": [],
+			"pos": "(8.0, 1.0)",
+			"side": "enemy",
+			"target": -1
+		},
+		{
+			"build": 0.0,
+			"cooldown": 0.0,
+			"goal": "(8.0, 18.0)",
+			"hp": 565.0,
+			"id": 20,
+			"kind": "hq",
+			"max_hp": 600.0,
+			"moving": false,
+			"path": [],
+			"pos": "(8.0, 18.0)",
+			"side": "sgc",
+			"target": -1
+		},
+		{
+			"build": 0.0,
+			"cooldown": 0.0,
+			"goal": "(5.0, 15.0)",
+			"hp": 220.0,
+			"id": 21,
+			"kind": "generator",
+			"max_hp": 220.0,
+			"moving": false,
+			"path": [],
+			"pos": "(5.0, 15.0)",
+			"side": "sgc",
+			"target": -1
+		},
+		{
+			"build": 0.0,
+			"cooldown": 0.0,
+			"goal": "(11.0, 16.0)",
+			"hp": 242.5,
+			"id": 22,
+			"kind": "turret",
+			"max_hp": 260.0,
+			"moving": false,
+			"path": [],
+			"pos": "(11.0, 16.0)",
+			"side": "sgc",
+			"target": -1
+		},
+		{
+			"build": 0.0,
+			"cooldown": 0.0,
+			"goal": "(5.0, 22.0)",
+			"hp": 240.0,
+			"id": 26,
+			"kind": "infirmary",
+			"max_hp": 240.0,
+			"moving": false,
+			"path": [],
+			"pos": "(5.0, 22.0)",
+			"side": "sgc",
+			"target": -1
+		},
+		{
+			"build": 0.0,
+			"cooldown": 0.0,
+			"goal": "(12.0, 21.0)",
+			"hp": 240.0,
+			"id": 27,
+			"kind": "lab",
+			"max_hp": 240.0,
+			"moving": false,
+			"path": [],
+			"pos": "(12.0, 21.0)",
+			"side": "sgc",
+			"target": -1
+		},
+		{
+			"build": 0.0,
+			"cooldown": 0.0,
+			"goal": "(2.0, 15.0)",
+			"hp": 220.0,
+			"id": 28,
+			"kind": "generator",
+			"max_hp": 220.0,
+			"moving": false,
+			"path": [],
+			"pos": "(2.0, 15.0)",
+			"side": "sgc",
+			"target": -1
+		},
+		{
+			"build": 0.0,
+			"cooldown": 0.0,
+			"goal": "(11.0, 12.0)",
+			"hp": 225.0,
+			"id": 30,
+			"kind": "turret",
+			"max_hp": 260.0,
+			"moving": false,
+			"path": [],
+			"pos": "(11.0, 12.0)",
+			"side": "sgc",
+			"target": -1
+		},
+		{
+			"build": 0.0,
+			"cooldown": 0.0,
+			"goal": "(14.0, 16.0)",
+			"hp": 260.0,
+			"id": 34,
+			"kind": "turret",
+			"max_hp": 260.0,
+			"moving": false,
+			"path": [],
+			"pos": "(14.0, 16.0)",
+			"side": "sgc",
+			"target": -1
+		},
+		{
+			"build": 0.0,
+			"cooldown": 0.0,
+			"goal": "(16.0, 12.0)",
+			"hp": 260.0,
+			"id": 35,
+			"kind": "mine",
+			"max_hp": 260.0,
+			"moving": false,
+			"path": [],
+			"pos": "(16.0, 12.0)",
+			"side": "sgc",
+			"target": -1
+		}
+	],
+	"rescue_route": false,
+	"result": "victory",
+	"resumed": true,
+	"seconds": 484.7,
+	"transitions": [
+		{
+			"soldiers": 0,
+			"stage": "arrival/archives",
+			"supplies": 320,
+			"time": 0.1
+		},
+		{
+			"soldiers": 4,
+			"stage": "recon/archives",
+			"supplies": 320,
+			"time": 7.6
+		},
+		{
+			"soldiers": 4,
+			"stage": "deployment/archives",
+			"supplies": 320,
+			"time": 14.4
+		},
+		{
+			"soldiers": 4,
+			"stage": "establish/archives",
+			"supplies": 320,
+			"time": 27.2
+		},
+		{
+			"soldiers": 4,
+			"stage": "base/archives",
+			"supplies": 320,
+			"time": 40.5
+		},
+		{
+			"soldiers": 11,
+			"stage": "base/relays",
+			"supplies": 220,
+			"time": 259.7
+		},
+		{
+			"soldiers": 11,
+			"stage": "base/assault",
+			"supplies": 535,
+			"time": 362.9
+		},
+		{
+			"soldiers": 11,
+			"stage": "base/transfer",
+			"supplies": 583,
+			"time": 375.2
+		},
+		{
+			"soldiers": 11,
+			"stage": "base/return",
+			"supplies": 914,
+			"time": 468.8
+		},
+		{
+			"soldiers": 11,
+			"stage": "base/ready",
+			"supplies": 942,
+			"time": 476.4
+		},
+		{
+			"soldiers": 11,
+			"stage": "base/evacuation",
+			"supplies": 962,
+			"time": 480.8
+		},
+		{
+			"soldiers": 0,
+			"stage": "base/complete",
+			"supplies": 978,
+			"time": 484.7
+		}
+	]
+}

@@ -23,6 +23,19 @@ func _draw() -> void:
 	for landmark in [[Sim.GATE, T.BLUE], [Sim.DEPOSIT, T.GREEN], [Sim.RUINS, T.AMBER]]:
 		if view.sim.is_explored(landmark[0]):
 			draw_circle((landmark[0] + Vector2.ONE * 0.5) * scale_map, 4, landmark[1])
+	if not view.sim.operation.is_empty():
+		var operation: Dictionary = view.sim.operation
+		if not operation.rescue_returned and not operation.rescue_lost:
+			draw_arc((Sim.Operation.RESCUE + Vector2.ONE * 0.5) * scale_map, 5, 0, TAU, 16, T.BLUE, 2)
+		if operation.stage != "archives":
+			for i in 2:
+				var point: Vector2 = Sim.Operation.RELAYS[i]
+				draw_arc((point + Vector2.ONE * 0.5) * scale_map, 5, 0, TAU, 16, T.GREEN if operation.relays[i] >= Sim.Operation.RELAY_TIME else T.AMBER, 2)
+		if operation.warning != "":
+			draw_circle((operation.raid_point + Vector2.ONE * 0.5) * scale_map, 6, T.RED)
+			var target: Dictionary = view.sim.entity(operation.raid_target)
+			if not target.is_empty():
+				draw_line((operation.raid_point + Vector2.ONE * 0.5) * scale_map, (target.pos + Vector2.ONE * 0.5) * scale_map, Color(T.RED, 0.65), 1.5)
 	for known in view.sim.known_buildings.values():
 		if not view.sim.is_visible(known.pos):
 			var p: Vector2 = (known.pos + Vector2.ONE * 0.5) * scale_map

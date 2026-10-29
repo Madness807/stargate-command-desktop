@@ -60,6 +60,11 @@ func _ready() -> void:
 
 func _encounter(poi: Dictionary) -> void:
 	var label: String = "%s / %s" % [Data.PLANETS[current].n, poi.k]
+	# Les règles de sauvetage sont vérifiées dans abydos_mission_tests ; ici, intégration moteur.
+	if planet.mission != null:
+		planet.mission.contacted = true
+		planet.mission.translated = true
+		planet.mission.shield_disabled = true
 	# Le déclencheur réellement utilisé par la marche, pas une fabrique de combat de test.
 	_on_poi(poi)
 	var combat = planet.combat
@@ -88,16 +93,27 @@ func _encounter(poi: Dictionary) -> void:
 	combat.on_tap(destination)
 	check(destination.x >= 0 and combat.units[0].rt_path.size() > 4, label + " : déplacement sans quota d'actions, ordre pendant pause")
 	combat._hold()
-	combat.units[0].ap = 0
 	combat.select(1)
 	_squad_pick(combat.units[0].kind)
-	check(combat.active == 0, label + " : sélection sans points d'action")
+	check(combat.active == 0, label + " : changement de membre immédiat")
 	combat.toggle_tactical_pause()
 	for unit in combat.units:
 		unit.hp = 1000
 		unit.hpmax = 1000
 		unit.range = 100
 		unit.fire_in = 0.0
+	# Isoler le contrôle d'horloge des nouveaux obstacles : un duel sur deux cases libres.
+	var shooter: Dictionary = combat.units[0]
+	var opponent := {}
+	for unit in combat.units:
+		if unit.side == "foe":
+			opponent = unit
+			break
+	shooter.tile = Vector2i(0, 0)
+	opponent.tile = Vector2i(0, 1)
+	shooter.node.position = planet.tile_pos(shooter.tile)
+	opponent.node.position = planet.tile_pos(opponent.tile)
+	check(combat.line_of_fire(shooter, opponent), label + " : duel de contrôle sur une ligne dégagée")
 	combat.advance(0.2)
 	var player_fired := false
 	var enemy_fired := false
@@ -106,12 +122,15 @@ func _encounter(poi: Dictionary) -> void:
 			if unit.side == "sg1": player_fired = true
 			else: enemy_fired = true
 	check(player_fired and enemy_fired and combat.combat_clock > clock, label + " : les deux camps tirent sur la même horloge")
-	check(_can_abandon(), label + " : accès à l'abandon sans attendre un tour")
+	check(_can_abandon(), label + " : abandon disponible pendant les échanges")
 	for unit in combat.units:
 		if unit.side == "foe":
 			combat._damage(unit, 99999)
 	combat.advance(0.1)
 	check(planet.combat == null and poi.done, label + " : victoire, récompenses et retour à l'exploration")
 	if poi.k == "boss":
-		check(Game.stats.done >= current + 1, label + " : progression de campagne conservée")
+		if planet.mission != null:
+			check(planet.mission.recovered and Game.stats.done == 0, label + " : Skaara récupéré, progression en attente d'extraction")
+		else:
+			check(Game.stats.done >= current + 1, label + " : progression de campagne conservée")
 	await settle()
